@@ -27,6 +27,8 @@ The server calls TMDB's multi-search, trending movies, movie details/credits, pe
 
 To keep random puzzle creation bounded, the generator samples up to four weekly trending movies, up to 20 cast entries per movie, and up to 20 popularity-sorted movie credits for three sampled actors. BFS finds the shortest route in that fetched graph. It cannot certify a globally shortest route across every TMDB credit; the interface labels it as the shortest known route and warns that credit data may be incomplete. Search and connection browsing are constrained to credits returned by the API.
 
+The optional destination hint uses the destination actor's most-popular returned film, or the first actor in a destination movie's returned cast order. TMDB cast order is a top-billing signal, not a guarantee of the movie's lead actor. Hints do not add a move.
+
 Successful TMDB responses are cached in memory for one hour, duplicate in-flight requests are coalesced, outbound concurrency is limited to three requests, and requests time out after 10 seconds. HTTP 429 responses are returned with their `Retry-After` header when TMDB provides one. The cache is process-local and is not shared across instances.
 
 Personal statistics are stored in the current browser's `localStorage`; no account or server-side player record is created. This product uses the TMDB API but is not endorsed or certified by TMDB.

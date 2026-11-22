@@ -4,6 +4,8 @@ import { getConnections, getRandomPuzzle } from './api/client'
 import type { CatalogEntity, Puzzle } from './api/types'
 import { buildGraph, findShortestPath, isValidNextEntity } from './game/graph'
 import type { Credit, GameEntity } from './game/model'
+import { selectPuzzleHint } from './game/hints'
+import type { PuzzleHint } from './game/hints'
 import { readPlayerStats, recordGameResult } from './game/stats'
 import type { PlayerStats } from './game/stats'
 
@@ -69,8 +71,12 @@ export default function App() {
   const [loadingConnections, setLoadingConnections] = useState(false)
   const [error, setError] = useState('')
   const [connectionError, setConnectionError] = useState('')
+  const [hint, setHint] = useState<PuzzleHint<CatalogEntity> | null>(null)
+  const [hintLoading, setHintLoading] = useState(false)
+  const [hintError, setHintError] = useState('')
   const [playerStats, setPlayerStats] = useState<PlayerStats>(() => readPlayerStats())
   const connectionRequest = useRef(0)
+  const hintRequest = useRef(0)
   const completedPuzzleId = useRef<string | null>(null)
   const initialLoadStarted = useRef(false)
 
@@ -95,6 +101,10 @@ export default function App() {
     setLoadingPuzzle(true)
     setError('')
     setConnectionError('')
+    setHint(null)
+    setHintError('')
+    setHintLoading(false)
+    hintRequest.current++
     setFilter('')
     setPuzzle(null)
     setGraphData(null)
@@ -193,6 +203,28 @@ export default function App() {
     setPath((previous) => previous.slice(0, index + 1))
   }
 
+  const revealHint = async () => {
+    if (!puzzle || hint || hintLoading) return
+    const requestId = ++hintRequest.current
+    setHintError('')
+    setHintLoading(true)
+    try {
+      const { connections } = await getConnections(puzzle.target.kind, puzzle.target.id)
+      if (hintRequest.current !== requestId) return
+      const suggestion = selectPuzzleHint(puzzle.target, connections)
+      if (!suggestion) {
+        setHintError('No destination credits are available for a hint.')
+        return
+      }
+      setHint(suggestion)
+    } catch (requestError) {
+      if (hintRequest.current !== requestId) return
+      setHintError(requestError instanceof Error ? requestError.message : 'Could not load a hint.')
+    } finally {
+      if (hintRequest.current === requestId) setHintLoading(false)
+    }
+  }
+
   return (
     <div className="app-shell">
       <div className="cinema-backdrop" aria-hidden="true" />
@@ -282,9 +314,34 @@ export default function App() {
               </section>
               <section className="score-card hint-card">
                 <div className="score-heading"><Icon name="bulb" /><span>Hint</span></div>
-                <p>{current.kind === 'movie'
-                  ? 'Pick someone from the cast to take your next step.'
-                  : 'Look through their filmography for your next connection.'}</p>
+                {!hint && !hintLoading && !hintError && (
+                  <>
+                    <p>Want a clue about your destination?</p>
+                    <button className="hint-button" onClick={() => void revealHint()} disabled={loadingPuzzle}>
+                      Add hint <Icon name="arrow" />
+                    </button>
+                  </>
+                )}
+                {hintLoading && <p className="hint-status"><span className="spinner small" /> Finding a clue…</p>}
+                {hintError && (
+                  <div className="hint-error" role="status">
+                    <p>{hintError}</p>
+                    <button className="hint-button" onClick={() => void revealHint()}>Try again</button>
+                  </div>
+                )}
+                {hint && (
+                  <div className="hint-result" role="status">
+                    <small>{hint.kind === 'popular-film' ? 'POPULAR FILM' : 'TOP-BILLED ACTOR'}</small>
+                    <div className="hint-entity">
+                      <EntityArtwork entity={hint.entity} className="hint-artwork" />
+                      <span>
+                        <strong>{hint.entity.name}</strong>
+                        <small>{entityKindLabel(hint.entity.kind)}{hint.entity.year ? ` · ${hint.entity.year}` : ''}</small>
+                      </span>
+                    </div>
+                    <p>This clue doesn’t add a step.</p>
+                  </div>
+                )}
               </section>
             </aside>
 
