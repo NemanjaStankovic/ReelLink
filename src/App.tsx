@@ -34,11 +34,10 @@ const formatTime = (seconds: number) => {
 
 const entityKindLabel = (kind: CatalogEntity['kind']) => kind === 'movie' ? 'Movie' : 'Actor'
 
-type IconName = 'reel' | 'random' | 'scores' | 'timer' | 'steps' | 'trophy' | 'bulb' | 'search' | 'clapper' | 'arrow'
+type IconName = 'random' | 'scores' | 'timer' | 'steps' | 'trophy' | 'bulb' | 'search' | 'clapper' | 'arrow'
 
 function Icon({ name }: { name: IconName }) {
   const shapes: Record<IconName, ReactNode> = {
-    reel: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="7" r="1" /><circle cx="7.7" cy="14.5" r="1" /><circle cx="16.3" cy="14.5" r="1" /><circle cx="8" cy="9" r="1" /><circle cx="16" cy="9" r="1" /></>,
     random: <><path d="M16 3h5v5" /><path d="M4 20 20 4" /><path d="M21 16v5h-5" /><path d="m15 15 6 6" /><path d="M4 4l5 5" /></>,
     scores: <><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4Z" /><path d="M7 6H4v2a4 4 0 0 0 4 4M17 6h3v2a4 4 0 0 1-4 4" /></>,
     timer: <><circle cx="12" cy="13" r="8" /><path d="M12 9v4l3 2M9 2h6M12 2v3" /></>,
@@ -243,7 +242,7 @@ export default function App() {
       <div className="cinema-backdrop" aria-hidden="true" />
       <header className="topbar">
         <a className="brand" href="/" aria-label="ReelLink home">
-          <span className="brand-mark"><Icon name="reel" /></span>
+          <span className="brand-mark"><img className="brand-logo" src="/reellink-logo.png?v=2" alt="" /></span>
           <span className="brand-copy"><strong>ReelLink</strong><small>Connect the stars!</small></span>
         </a>
         <nav className="site-nav" aria-label="Game navigation">
@@ -474,7 +473,7 @@ export default function App() {
         )}
 
         <footer className="footer">
-          <span><Icon name="reel" /> REELLINK</span>
+          <span><img className="footer-logo" src="/reellink-logo.png?v=2" alt="" /> REELLINK</span>
           <span>Made for people who love the movies.</span>
           <span>This product uses the TMDB API but is not endorsed or certified by TMDB.</span>
         </footer>

@@ -27,7 +27,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .cinema-backdrop { position: fixed; z-index: -1; right: 0; bottom: 0; left: 0; height: min(250px, 30vh); pointer-events: none; background: url('/cinema-silhouette.svg') center bottom / cover no-repeat; opacity: .73; }
 .topbar { position: relative; z-index: 2; width: min(1190px, calc(100% - 60px)); height: 83px; display: flex; align-items: center; justify-content: space-between; margin: 0 auto; border-bottom: 1px solid rgba(164,157,224,.13); }
 .brand { display: inline-flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
-.brand-mark { width: 52px; height: 52px; display: grid; place-items: center; border-radius: 50%; color: #e6e5f4; background: linear-gradient(145deg, #393956, #181a31); box-shadow: inset 0 0 0 1px rgba(255,255,255,.13), 0 4px 14px rgba(0,0,0,.25); }
+.brand-mark { width: 52px; height: 52px; display: grid; place-items: center; }
+.brand-logo { width: 100%; height: 100%; display: block; object-fit: contain; }
 .icon { width: 20px; height: 20px; flex: none; }
 .brand-mark .icon { width: 38px; height: 38px; stroke-width: 2.4; }
 .brand-copy { display: grid; gap: 0; }
@@ -156,7 +157,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .data-note span { flex: none; color: var(--gold); font-size: 11px; }
 .footer { min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 14px; color: #898eac; font-size: 8px; }
 .footer > span:first-child { display: inline-flex; align-items: center; gap: 6px; color: #a8aac3; font-size: 7px; font-weight: 700; letter-spacing: 1.1px; }
-.footer .icon { width: 17px; height: 17px; color: var(--gold); }
+.footer-logo { width: 18px; height: 18px; display: block; object-fit: contain; }
 .loading-panel { min-height: 420px; display: grid; align-content: center; justify-items: center; gap: 15px; color: var(--muted); font-size: 12px; }
 .spinner { width: 24px; height: 24px; border: 2px solid rgba(255,186,38,.2); border-top-color: var(--gold); border-radius: 50%; animation: spin .8s linear infinite; }
 .spinner.small { width: 15px; height: 15px; }
@@ -210,7 +211,6 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   .topbar { height: 70px; }
   .brand { gap: 8px; }
   .brand-mark { width: 42px; height: 42px; }
-  .brand-mark .icon { width: 31px; height: 31px; }
   .brand-copy strong { font-size: 19px; }
   .brand-copy small { font-size: 9px; }
   .site-nav { gap: 3px; padding: 4px; }
