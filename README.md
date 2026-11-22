@@ -33,4 +33,4 @@ The currently selected path entity is expanded below the game with its movie ove
 
 Successful TMDB responses are cached in memory for one hour, duplicate in-flight requests are coalesced, outbound concurrency is limited to three requests, and requests time out after 10 seconds. HTTP 429 responses are returned with their `Retry-After` header when TMDB provides one. The cache is process-local and is not shared across instances.
 
-Personal statistics are stored in the current browser's `localStorage`; no account or server-side player record is created. This product uses the TMDB API but is not endorsed or certified by TMDB.
+Personal statistics and the collection of correctly guessed movie and actor cards are stored in the current browser's `localStorage`; repeated correct guesses increment each card's count. Selecting a collection card loads its TMDB overview and rating, or biography and popular movie credits. No account or server-side player record is created. This product uses the TMDB API but is not endorsed or certified by TMDB.

@@ -8,6 +8,8 @@ import { selectPuzzleHint, selectPuzzleHints } from './game/hints'
 import type { PuzzleHint } from './game/hints'
 import { readPlayerStats, recordGameResult } from './game/stats'
 import type { PlayerStats } from './game/stats'
+import { readCollection, recordCorrectGuess } from './game/collection'
+import type { CollectedCard } from './game/collection'
 
 interface GraphData {
   nodes: Map<string, CatalogEntity>
@@ -34,12 +36,12 @@ const formatTime = (seconds: number) => {
 
 const entityKindLabel = (kind: CatalogEntity['kind']) => kind === 'movie' ? 'Movie' : 'Actor'
 
-type IconName = 'dice' | 'scores' | 'timer' | 'steps' | 'trophy' | 'bulb' | 'search' | 'clapper' | 'arrow'
+type IconName = 'dice' | 'collection' | 'timer' | 'steps' | 'trophy' | 'bulb' | 'search' | 'clapper' | 'arrow'
 
 function Icon({ name }: { name: IconName }) {
   const shapes: Record<IconName, ReactNode> = {
     dice: <><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.25" fill="currentColor" stroke="none" /><circle cx="16" cy="8" r="1.25" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none" /><circle cx="8" cy="16" r="1.25" fill="currentColor" stroke="none" /><circle cx="16" cy="16" r="1.25" fill="currentColor" stroke="none" /></>,
-    scores: <><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4Z" /><path d="M7 6H4v2a4 4 0 0 0 4 4M17 6h3v2a4 4 0 0 1-4 4" /></>,
+    collection: <><rect x="5" y="4" width="15" height="17" rx="2" /><path d="M8 8h9M8 12h9M8 16h6M3 7v13a2 2 0 0 0 2 2h12" /></>,
     timer: <><circle cx="12" cy="13" r="8" /><path d="M12 9v4l3 2M9 2h6M12 2v3" /></>,
     steps: <><circle cx="6" cy="6" r="2" /><circle cx="18" cy="18" r="2" /><circle cx="18" cy="6" r="2" /><path d="M8 6h5a5 5 0 0 1 5 5v5" /><path d="m15 14 3 3 3-3" /></>,
     trophy: <><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4Z" /><path d="M7 6H4v2a4 4 0 0 0 4 4M17 6h3v2a4 4 0 0 1-4 4" /></>,
@@ -64,7 +66,66 @@ function EntityArtwork({ entity, className = '' }: { entity: CatalogEntity; clas
     </span>
 }
 
+function EntityDetailsContent({
+  entity,
+  connections,
+  loadingConnections,
+}: {
+  entity: CatalogEntity
+  connections: CatalogEntity[]
+  loadingConnections: boolean
+}) {
+  const popularMovies = connections.filter((item) => item.kind === 'movie').slice(0, 5)
+
+  return (
+    <>
+      <div className="details-art">
+        <EntityArtwork entity={entity} className="details-image" />
+      </div>
+      <div className="details-copy">
+        <div className="details-heading">
+          <div>
+            <span className="details-kicker">{entity.kind === 'movie' ? 'NOW PLAYING' : 'IN THE SPOTLIGHT'}</span>
+            <h2>{entity.name}</h2>
+            {entity.year && <span className="details-year">{entity.kind === 'movie' ? 'Released' : 'Born'} {entity.year}</span>}
+          </div>
+          {entity.kind === 'movie' && (
+            <div className="tmdb-score" aria-label="TMDB rating">
+              <span>TMDB SCORE</span>
+              <strong>{entity.rating && entity.rating > 0 ? entity.rating.toFixed(1) : '—'}<small>/10</small></strong>
+            </div>
+          )}
+        </div>
+        <div className="details-description">
+          <h3>{entity.kind === 'movie' ? 'Movie overview' : 'Biography'}</h3>
+          <p>{entity.description.trim() || `No ${entity.kind === 'movie' ? 'overview' : 'biography'} is available from TMDB.`}</p>
+        </div>
+        {entity.kind === 'actor' && (
+          <div className="popular-films">
+            <h3>Popular movies</h3>
+            {popularMovies.length > 0 ? (
+              <div className="popular-film-list">
+                {popularMovies.map((movie) => (
+                  <div className="popular-film" key={entityKey(movie)}>
+                    <EntityArtwork entity={movie} className="popular-film-art" />
+                    <span><strong>{movie.name}</strong><small>{movie.year ?? 'Release year unknown'}</small></span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="no-popular-films">{loadingConnections ? 'Loading filmography…' : 'No movie credits are available.'}</p>
+            )}
+          </div>
+        )}
+      </div>
+    </>
+  )
+}
+
+type CollectionFilter = 'all' | 'movie' | 'actor'
+
 export default function App() {
+  const [view, setView] = useState<'game' | 'collection'>('game')
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null)
   const [graphData, setGraphData] = useState<GraphData | null>(null)
   const [path, setPath] = useState<CatalogEntity[]>([])
@@ -84,9 +145,19 @@ export default function App() {
   const [deluxeHintError, setDeluxeHintError] = useState('')
   const [completionDismissed, setCompletionDismissed] = useState(false)
   const [playerStats, setPlayerStats] = useState<PlayerStats>(() => readPlayerStats())
+  const [collection, setCollection] = useState<CollectedCard[]>(() => readCollection())
+  const [collectionFilter, setCollectionFilter] = useState<CollectionFilter>('all')
+  const [collectionSearch, setCollectionSearch] = useState('')
+  const [collectionError, setCollectionError] = useState('')
+  const [selectedCard, setSelectedCard] = useState<CollectedCard | null>(null)
+  const [selectedCardDetails, setSelectedCardDetails] = useState<CatalogEntity | null>(null)
+  const [selectedCardConnections, setSelectedCardConnections] = useState<CatalogEntity[]>([])
+  const [selectedCardLoading, setSelectedCardLoading] = useState(false)
+  const [selectedCardError, setSelectedCardError] = useState('')
   const connectionRequest = useRef(0)
   const hintRequest = useRef(0)
   const deluxeHintRequest = useRef(0)
+  const selectedCardRequest = useRef(0)
   const completedPuzzleId = useRef<string | null>(null)
   const initialLoadStarted = useRef(false)
 
@@ -106,8 +177,18 @@ export default function App() {
     ? findShortestPath(gameGraph, entityKey(puzzle.start), entityKey(puzzle.target))
     : null
   const shortestSteps = bestPath?.steps ?? puzzle?.shortestSteps ?? 0
+  const visibleCollection = useMemo(() => {
+    const query = collectionSearch.trim().toLocaleLowerCase()
+    return collection
+      .filter((card) => collectionFilter === 'all' || card.entity.kind === collectionFilter)
+      .filter((card) => !query || card.entity.name.toLocaleLowerCase().includes(query))
+      .sort((a, b) => b.lastGuessedAt.localeCompare(a.lastGuessedAt))
+  }, [collection, collectionFilter, collectionSearch])
 
   const startPuzzle = async () => {
+    setView('game')
+    setSelectedCard(null)
+    selectedCardRequest.current++
     setLoadingPuzzle(true)
     setError('')
     setConnectionError('')
@@ -218,6 +299,39 @@ export default function App() {
     if (!isValidNextEntity(gameGraph, path.map(toGameEntity), entityKey(entity))) return
     setPath((previous) => [...previous, entity])
     setFilter('')
+    try {
+      setCollection(recordCorrectGuess(window.localStorage, entity))
+      setCollectionError('')
+    } catch (requestError) {
+      setCollectionError(requestError instanceof Error
+        ? `Could not save your collection: ${requestError.message}`
+        : 'Could not save your collection.')
+    }
+  }
+
+  const openCollectedCard = async (card: CollectedCard) => {
+    const requestId = ++selectedCardRequest.current
+    setSelectedCard(card)
+    setSelectedCardDetails(null)
+    setSelectedCardConnections([])
+    setSelectedCardError('')
+    setSelectedCardLoading(true)
+    try {
+      const details = await getConnections(card.entity.kind, card.entity.id)
+      if (selectedCardRequest.current !== requestId) return
+      setSelectedCardDetails(details.entity)
+      setSelectedCardConnections(details.connections)
+    } catch (requestError) {
+      if (selectedCardRequest.current !== requestId) return
+      setSelectedCardError(requestError instanceof Error ? requestError.message : 'Could not load card details.')
+    } finally {
+      if (selectedCardRequest.current === requestId) setSelectedCardLoading(false)
+    }
+  }
+
+  const closeCollectedCard = () => {
+    selectedCardRequest.current++
+    setSelectedCard(null)
   }
 
   const rewindTo = (index: number) => {
@@ -275,6 +389,15 @@ export default function App() {
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [deluxeHintOpen])
 
+  useEffect(() => {
+    if (!selectedCard) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeCollectedCard()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [selectedCard])
+
   return (
     <div className="app-shell">
       <div className="cinema-backdrop" aria-hidden="true" />
@@ -284,15 +407,94 @@ export default function App() {
           <span className="brand-copy"><strong>ReelLink</strong><small>Connect the stars!</small></span>
         </a>
         <nav className="site-nav" aria-label="Game navigation">
-          <button className="nav-button active" onClick={() => void startPuzzle()} disabled={loadingPuzzle}>
+          <button className={`nav-button ${view === 'game' ? 'active' : ''}`} onClick={() => void startPuzzle()} disabled={loadingPuzzle}>
             <Icon name="dice" /><span>Random puzzle</span>
           </button>
-          <a className="nav-button" href="#scores"><Icon name="scores" /><span>Scores</span></a>
+          <button className={`nav-button ${view === 'collection' ? 'active' : ''}`} onClick={() => setView('collection')}>
+            <Icon name="collection" /><span>Collection</span>
+          </button>
         </nav>
       </header>
 
       <main className="game-page">
-        {error ? (
+        {collectionError && <p className="collection-storage-error" role="alert">{collectionError}</p>}
+        {view === 'collection' ? (
+          <section className="collection-page">
+            <header className="collection-heading">
+              <div>
+                <p className="collection-kicker">YOUR REELLINK COLLECTION</p>
+                <h1>Every connection counts.</h1>
+                <p>Movies and actors you’ve correctly connected in your puzzles.</p>
+              </div>
+              <div className="collection-total">
+                <strong>{collection.length}</strong>
+                <span>{collection.length === 1 ? 'unique card' : 'unique cards'}</span>
+              </div>
+            </header>
+
+            <div className="collection-toolbar">
+              <div className="collection-filters" role="group" aria-label="Filter collection by type">
+                {([
+                  ['all', 'All', collection.length],
+                  ['movie', 'Movies', collection.filter((card) => card.entity.kind === 'movie').length],
+                  ['actor', 'Actors', collection.filter((card) => card.entity.kind === 'actor').length],
+                ] as const).map(([kind, label, count]) => (
+                  <button
+                    key={kind}
+                    className={`collection-filter ${collectionFilter === kind ? 'active' : ''}`}
+                    onClick={() => setCollectionFilter(kind)}
+                    aria-pressed={collectionFilter === kind}
+                  >
+                    {label}<span>{count}</span>
+                  </button>
+                ))}
+              </div>
+              <label className="search-field collection-search">
+                <Icon name="search" />
+                <input
+                  value={collectionSearch}
+                  onChange={(event) => setCollectionSearch(event.target.value)}
+                  placeholder="Search your collection…"
+                  aria-label="Search collection"
+                />
+                {collectionSearch && <button aria-label="Clear collection search" onClick={() => setCollectionSearch('')}>×</button>}
+              </label>
+            </div>
+
+            {collection.length === 0 ? (
+              <div className="collection-empty">
+                <Icon name="collection" />
+                <h2>Your collection is waiting.</h2>
+                <p>Every actor or movie you correctly connect will be saved here.</p>
+                <button className="button button-gold" onClick={() => void startPuzzle()}>Start a puzzle</button>
+              </div>
+            ) : visibleCollection.length === 0 ? (
+              <div className="collection-empty">
+                <h2>No matching cards</h2>
+                <p>Try a different search or collection filter.</p>
+              </div>
+            ) : (
+              <div className="collection-grid">
+                {visibleCollection.map((card) => (
+                  <button
+                    className="collection-card"
+                    key={entityKey(card.entity)}
+                    onClick={() => void openCollectedCard(card)}
+                    aria-label={`${card.entity.name}, ${card.correctGuesses} correct ${card.correctGuesses === 1 ? 'guess' : 'guesses'}`}
+                  >
+                    <EntityArtwork entity={card.entity} className="collection-card-artwork" />
+                    <span className="collection-card-shade" />
+                    <span className="collection-card-kind">{entityKindLabel(card.entity.kind)}</span>
+                    <span className="collection-card-title">{card.entity.name}</span>
+                    <span className="collection-guess-count" title={`${card.correctGuesses} correct ${card.correctGuesses === 1 ? 'guess' : 'guesses'}`}>
+                      {card.correctGuesses > 99 ? '99+' : card.correctGuesses}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : error ? (
           <section className="error-panel" role="alert">
             <div className="error-icon">!</div>
             <div>
@@ -480,48 +682,11 @@ export default function App() {
             </section>
 
             <section className="entity-details" aria-live="polite">
-              <div className="details-art">
-                <EntityArtwork entity={current} className="details-image" />
-              </div>
-              <div className="details-copy">
-                <div className="details-heading">
-                  <div>
-                    <span className="details-kicker">{current.kind === 'movie' ? 'NOW PLAYING' : 'IN THE SPOTLIGHT'}</span>
-                    <h2>{current.name}</h2>
-                    {current.year && <span className="details-year">{current.kind === 'movie' ? 'Released' : 'Born'} {current.year}</span>}
-                  </div>
-                  {current.kind === 'movie' && (
-                    <div className="tmdb-score" aria-label="TMDB rating">
-                      <span>TMDB SCORE</span>
-                      <strong>{current.rating && current.rating > 0 ? current.rating.toFixed(1) : '—'}<small>/10</small></strong>
-                    </div>
-                  )}
-                </div>
-                <div className="details-description">
-                  <h3>{current.kind === 'movie' ? 'Movie overview' : 'Biography'}</h3>
-                  <p>{current.description.trim() || `No ${current.kind === 'movie' ? 'overview' : 'biography'} is available from TMDB.`}</p>
-                </div>
-                {current.kind === 'actor' && (
-                  <div className="popular-films">
-                    <h3>Popular movies</h3>
-                    {connectedEntities.filter((entity) => entity.kind === 'movie').length > 0 ? (
-                      <div className="popular-film-list">
-                        {connectedEntities
-                          .filter((entity) => entity.kind === 'movie')
-                          .slice(0, 5)
-                          .map((movie) => (
-                            <div className="popular-film" key={entityKey(movie)}>
-                              <EntityArtwork entity={movie} className="popular-film-art" />
-                              <span><strong>{movie.name}</strong><small>{movie.year ?? 'Release year unknown'}</small></span>
-                            </div>
-                          ))}
-                      </div>
-                    ) : (
-                      <p className="no-popular-films">{loadingConnections ? 'Loading filmography…' : 'No movie credits are available.'}</p>
-                    )}
-                  </div>
-                )}
-              </div>
+              <EntityDetailsContent
+                entity={current}
+                connections={connectedEntities}
+                loadingConnections={loadingConnections}
+              />
             </section>
           </div>
         )}
@@ -614,6 +779,58 @@ export default function App() {
               <p>This clue doesn’t add a step.</p>
               <button className="button button-gold" onClick={() => setDeluxeHintOpen(false)}>Got it</button>
             </footer>
+          </section>
+        </div>
+      )}
+      {selectedCard && (
+        <div
+          className="modal-backdrop collection-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeCollectedCard()
+          }}
+        >
+          <section
+            className="collection-detail-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${selectedCard.entity.name} card details`}
+          >
+            <header className="collection-detail-header">
+              <div>
+                <p className="collection-kicker">COLLECTION CARD</p>
+                <span>{selectedCard.correctGuesses} correct {selectedCard.correctGuesses === 1 ? 'guess' : 'guesses'}</span>
+              </div>
+              <button
+                className="deluxe-hint-close"
+                onClick={closeCollectedCard}
+                aria-label="Close card details"
+                autoFocus
+              >
+                ×
+              </button>
+            </header>
+            {selectedCardLoading && (
+              <div className="collection-detail-status" role="status">
+                <span className="spinner small" />
+                <span>Loading details for {selectedCard.entity.name}…</span>
+              </div>
+            )}
+            {selectedCardError && (
+              <div className="collection-detail-error" role="alert">
+                <p>{selectedCardError}</p>
+                <button className="button button-gold" onClick={() => void openCollectedCard(selectedCard)}>Try again</button>
+              </div>
+            )}
+            {selectedCardDetails && (
+              <section className="entity-details collection-detail-content" aria-live="polite">
+                <EntityDetailsContent
+                  entity={selectedCardDetails}
+                  connections={selectedCardConnections}
+                  loadingConnections={false}
+                />
+              </section>
+            )}
           </section>
         </div>
       )}
