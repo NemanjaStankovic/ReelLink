@@ -308,6 +308,7 @@ export default function App() {
     if (!isValidNextEntity(gameGraph, path.map(toGameEntity), entityKey(entity))) return
     setPath((previous) => [...previous, entity])
     setFilter('')
+    if (!puzzle || entityKey(entity) !== entityKey(puzzle.target)) return
     if (!puzzleDifficulty) {
       setCollectionError('Could not save your collection: this puzzle has no supported difficulty tier.')
       return
