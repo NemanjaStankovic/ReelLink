@@ -34,11 +34,11 @@ const formatTime = (seconds: number) => {
 
 const entityKindLabel = (kind: CatalogEntity['kind']) => kind === 'movie' ? 'Movie' : 'Actor'
 
-type IconName = 'random' | 'scores' | 'timer' | 'steps' | 'trophy' | 'bulb' | 'search' | 'clapper' | 'arrow'
+type IconName = 'dice' | 'scores' | 'timer' | 'steps' | 'trophy' | 'bulb' | 'search' | 'clapper' | 'arrow'
 
 function Icon({ name }: { name: IconName }) {
   const shapes: Record<IconName, ReactNode> = {
-    random: <><path d="M16 3h5v5" /><path d="M4 20 20 4" /><path d="M21 16v5h-5" /><path d="m15 15 6 6" /><path d="M4 4l5 5" /></>,
+    dice: <><rect x="3" y="3" width="18" height="18" rx="3" /><circle cx="8" cy="8" r="1.25" fill="currentColor" stroke="none" /><circle cx="16" cy="8" r="1.25" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none" /><circle cx="8" cy="16" r="1.25" fill="currentColor" stroke="none" /><circle cx="16" cy="16" r="1.25" fill="currentColor" stroke="none" /></>,
     scores: <><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4Z" /><path d="M7 6H4v2a4 4 0 0 0 4 4M17 6h3v2a4 4 0 0 1-4 4" /></>,
     timer: <><circle cx="12" cy="13" r="8" /><path d="M12 9v4l3 2M9 2h6M12 2v3" /></>,
     steps: <><circle cx="6" cy="6" r="2" /><circle cx="18" cy="18" r="2" /><circle cx="18" cy="6" r="2" /><path d="M8 6h5a5 5 0 0 1 5 5v5" /><path d="m15 14 3 3 3-3" /></>,
@@ -285,7 +285,7 @@ export default function App() {
         </a>
         <nav className="site-nav" aria-label="Game navigation">
           <button className="nav-button active" onClick={() => void startPuzzle()} disabled={loadingPuzzle}>
-            <Icon name="random" /><span>Random puzzle</span>
+            <Icon name="dice" /><span>Random puzzle</span>
           </button>
           <a className="nav-button" href="#scores"><Icon name="scores" /><span>Scores</span></a>
         </nav>
@@ -314,7 +314,16 @@ export default function App() {
             <section className="challenge-panel">
               <div className="challenge-topline">
                 <span>YOUR NEXT CINEMA CONNECTION</span>
-                <span className="challenge-badge"><span>✦</span> RANDOM</span>
+                <button
+                  type="button"
+                  className="challenge-badge"
+                  onClick={() => void startPuzzle()}
+                  disabled={loadingPuzzle}
+                  aria-label="Get another random puzzle"
+                  title="Get another random puzzle"
+                >
+                  <Icon name="dice" /><span>RANDOM</span>
+                </button>
               </div>
               <div className="challenge-layout">
                 <div className="hero-entity start-entity">
