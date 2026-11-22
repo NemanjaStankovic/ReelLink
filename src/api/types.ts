@@ -8,6 +8,7 @@ export interface CatalogEntity {
   imageUrl: string | null
   description: string
   popularity: number
+  rating?: number | null
   knownFor?: string
 }
 

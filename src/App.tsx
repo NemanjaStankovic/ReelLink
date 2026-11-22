@@ -56,7 +56,12 @@ function EntityArtwork({ entity, className = '' }: { entity: CatalogEntity; clas
   return entity.imageUrl
     ? <img className={className} src={entity.imageUrl} alt="" loading="lazy" />
     : <span className={`${className} artwork-placeholder ${entity.kind}`} aria-hidden="true">
-      {entity.kind === 'movie' ? <Icon name="clapper" /> : <span className="actor-silhouette">●</span>}
+      {entity.kind === 'movie'
+        ? <Icon name="clapper" />
+        : <svg className="actor-placeholder-icon" viewBox="0 0 64 80" fill="currentColor">
+          <circle cx="32" cy="22" r="13" />
+          <path d="M7 78c1-19 10-31 25-31s24 12 25 31H7Z" />
+        </svg>}
     </span>
 }
 
@@ -74,6 +79,7 @@ export default function App() {
   const [hint, setHint] = useState<PuzzleHint<CatalogEntity> | null>(null)
   const [hintLoading, setHintLoading] = useState(false)
   const [hintError, setHintError] = useState('')
+  const [completionDismissed, setCompletionDismissed] = useState(false)
   const [playerStats, setPlayerStats] = useState<PlayerStats>(() => readPlayerStats())
   const connectionRequest = useRef(0)
   const hintRequest = useRef(0)
@@ -104,6 +110,7 @@ export default function App() {
     setHint(null)
     setHintError('')
     setHintLoading(false)
+    setCompletionDismissed(false)
     hintRequest.current++
     setFilter('')
     setPuzzle(null)
@@ -147,21 +154,25 @@ export default function App() {
     setLoadingConnections(true)
     setConnectionError('')
     getConnections(current.kind, current.id)
-      .then(({ connections }) => {
+      .then(({ entity: currentEntity, connections }) => {
         if (connectionRequest.current !== requestId) return
         setGraphData((previous) => {
           if (!previous) return previous
           const nodes = new Map(previous.nodes)
           const credits = new Map(previous.credits)
-          for (const entity of connections) {
-            nodes.set(entityKey(entity), entity)
+          nodes.set(entityKey(currentEntity), currentEntity)
+          for (const connection of connections) {
+            nodes.set(entityKey(connection), connection)
             const credit: Credit = current.kind === 'movie'
-              ? { movieId: current.id, actorId: entity.id }
-              : { movieId: entity.id, actorId: current.id }
+              ? { movieId: current.id, actorId: connection.id }
+              : { movieId: connection.id, actorId: current.id }
             credits.set(`${credit.movieId}:${credit.actorId}`, credit)
           }
           return { nodes, credits }
         })
+        setPath((previous) => previous.map((item) =>
+          entityKey(item) === entityKey(currentEntity) ? currentEntity : item,
+        ))
       })
       .catch((requestError: unknown) => {
         if (connectionRequest.current !== requestId) return
@@ -183,13 +194,15 @@ export default function App() {
     }))
   }, [isComplete, puzzle, path.length, shortestSteps, elapsedSeconds])
 
-  const neighbors = current && gameGraph && graphData
+  const connectedEntities = current && gameGraph && graphData
     ? [...(gameGraph.neighbors.get(entityKey(current)) ?? [])]
       .map((id) => graphData.nodes.get(id))
       .filter((entity): entity is CatalogEntity => Boolean(entity))
-      .filter((entity) => entity.name.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()))
       .sort((a, b) => b.popularity - a.popularity)
     : []
+  const neighbors = connectedEntities.filter((entity) =>
+    entity.name.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()),
+  )
 
   const chooseEntity = (entity: CatalogEntity) => {
     if (!gameGraph || !current || isComplete) return
@@ -412,6 +425,51 @@ export default function App() {
               </div>
               <div className="data-note"><span>ⓘ</span> Connections use available TMDB credits; some cast and filmography data may be incomplete.</div>
             </section>
+
+            <section className="entity-details" aria-live="polite">
+              <div className="details-art">
+                <EntityArtwork entity={current} className="details-image" />
+              </div>
+              <div className="details-copy">
+                <div className="details-heading">
+                  <div>
+                    <span className="details-kicker">{current.kind === 'movie' ? 'NOW PLAYING' : 'IN THE SPOTLIGHT'}</span>
+                    <h2>{current.name}</h2>
+                    {current.year && <span className="details-year">{current.kind === 'movie' ? 'Released' : 'Born'} {current.year}</span>}
+                  </div>
+                  {current.kind === 'movie' && (
+                    <div className="tmdb-score" aria-label="TMDB rating">
+                      <span>TMDB SCORE</span>
+                      <strong>{current.rating && current.rating > 0 ? current.rating.toFixed(1) : '—'}<small>/10</small></strong>
+                    </div>
+                  )}
+                </div>
+                <div className="details-description">
+                  <h3>{current.kind === 'movie' ? 'Movie overview' : 'Biography'}</h3>
+                  <p>{current.description.trim() || `No ${current.kind === 'movie' ? 'overview' : 'biography'} is available from TMDB.`}</p>
+                </div>
+                {current.kind === 'actor' && (
+                  <div className="popular-films">
+                    <h3>Popular movies</h3>
+                    {connectedEntities.filter((entity) => entity.kind === 'movie').length > 0 ? (
+                      <div className="popular-film-list">
+                        {connectedEntities
+                          .filter((entity) => entity.kind === 'movie')
+                          .slice(0, 5)
+                          .map((movie) => (
+                            <div className="popular-film" key={entityKey(movie)}>
+                              <EntityArtwork entity={movie} className="popular-film-art" />
+                              <span><strong>{movie.name}</strong><small>{movie.year ?? 'Release year unknown'}</small></span>
+                            </div>
+                          ))}
+                      </div>
+                    ) : (
+                      <p className="no-popular-films">{loadingConnections ? 'Loading filmography…' : 'No movie credits are available.'}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </section>
           </div>
         )}
 
@@ -422,7 +480,7 @@ export default function App() {
         </footer>
       </main>
 
-      {isComplete && puzzle && (
+      {isComplete && puzzle && !completionDismissed && (
         <div className="modal-backdrop" role="presentation">
           <section className="completion-modal" role="dialog" aria-modal="true" aria-labelledby="completion-title">
             <div className="completion-star">✦</div>
@@ -441,6 +499,7 @@ export default function App() {
               {path.length - 1 === shortestSteps ? '✦ Optimal route!' : 'There’s a shorter route to discover.'}
             </div>
             <button className="button button-gold" onClick={() => void startPuzzle()}>Play another round <span>→</span></button>
+            <button className="details-link" onClick={() => setCompletionDismissed(true)}>View movie or actor details below <span>↓</span></button>
           </section>
         </div>
       )}

@@ -9,6 +9,7 @@ interface TmdbMovie {
   poster_path?: string | null
   overview?: string
   popularity?: number
+  vote_average?: number
   media_type?: string
 }
 
@@ -48,6 +49,7 @@ const movieDto = (movie: TmdbMovie): CatalogEntity => ({
   imageUrl: imageUrl(movie.poster_path),
   description: movie.overview ?? '',
   popularity: movie.popularity ?? 0,
+  rating: movie.vote_average ?? null,
 })
 
 const personDto = (person: TmdbPerson): CatalogEntity => ({

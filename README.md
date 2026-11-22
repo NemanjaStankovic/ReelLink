@@ -29,6 +29,8 @@ To keep random puzzle creation bounded, the generator samples up to four weekly 
 
 The optional destination hint uses the destination actor's most-popular returned film, or the first actor in a destination movie's returned cast order. TMDB cast order is a top-billing signal, not a guarantee of the movie's lead actor. Hints do not add a move.
 
+The currently selected path entity is expanded below the game with its movie overview and TMDB rating, or the actor biography and popular movie credits. At puzzle completion, choose “View details below” to dismiss the score summary and inspect the destination details.
+
 Successful TMDB responses are cached in memory for one hour, duplicate in-flight requests are coalesced, outbound concurrency is limited to three requests, and requests time out after 10 seconds. HTTP 429 responses are returned with their `Retry-After` header when TMDB provides one. The cache is process-local and is not shared across instances.
 
 Personal statistics are stored in the current browser's `localStorage`; no account or server-side player record is created. This product uses the TMDB API but is not endorsed or certified by TMDB.
