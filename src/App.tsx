@@ -4,7 +4,7 @@ import { getConnections, getRandomPuzzle } from './api/client'
 import type { CatalogEntity, Puzzle } from './api/types'
 import { buildGraph, findShortestPath, isValidNextEntity } from './game/graph'
 import type { Credit, GameEntity } from './game/model'
-import { selectPuzzleHint } from './game/hints'
+import { selectPuzzleHint, selectPuzzleHints } from './game/hints'
 import type { PuzzleHint } from './game/hints'
 import { readPlayerStats, recordGameResult } from './game/stats'
 import type { PlayerStats } from './game/stats'
@@ -78,10 +78,15 @@ export default function App() {
   const [hint, setHint] = useState<PuzzleHint<CatalogEntity> | null>(null)
   const [hintLoading, setHintLoading] = useState(false)
   const [hintError, setHintError] = useState('')
+  const [deluxeHintOpen, setDeluxeHintOpen] = useState(false)
+  const [deluxeHints, setDeluxeHints] = useState<PuzzleHint<CatalogEntity>[] | null>(null)
+  const [deluxeHintLoading, setDeluxeHintLoading] = useState(false)
+  const [deluxeHintError, setDeluxeHintError] = useState('')
   const [completionDismissed, setCompletionDismissed] = useState(false)
   const [playerStats, setPlayerStats] = useState<PlayerStats>(() => readPlayerStats())
   const connectionRequest = useRef(0)
   const hintRequest = useRef(0)
+  const deluxeHintRequest = useRef(0)
   const completedPuzzleId = useRef<string | null>(null)
   const initialLoadStarted = useRef(false)
 
@@ -109,8 +114,13 @@ export default function App() {
     setHint(null)
     setHintError('')
     setHintLoading(false)
+    setDeluxeHintOpen(false)
+    setDeluxeHints(null)
+    setDeluxeHintError('')
+    setDeluxeHintLoading(false)
     setCompletionDismissed(false)
     hintRequest.current++
+    deluxeHintRequest.current++
     setFilter('')
     setPuzzle(null)
     setGraphData(null)
@@ -237,6 +247,34 @@ export default function App() {
     }
   }
 
+  const revealDeluxeHint = async () => {
+    setDeluxeHintOpen(true)
+    if (!puzzle || deluxeHints !== null || deluxeHintLoading) return
+
+    const requestId = ++deluxeHintRequest.current
+    setDeluxeHintError('')
+    setDeluxeHintLoading(true)
+    try {
+      const { connections } = await getConnections(puzzle.target.kind, puzzle.target.id)
+      if (deluxeHintRequest.current !== requestId) return
+      setDeluxeHints(selectPuzzleHints(puzzle.target, connections))
+    } catch (requestError) {
+      if (deluxeHintRequest.current !== requestId) return
+      setDeluxeHintError(requestError instanceof Error ? requestError.message : 'Could not load deluxe hints.')
+    } finally {
+      if (deluxeHintRequest.current === requestId) setDeluxeHintLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!deluxeHintOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setDeluxeHintOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [deluxeHintOpen])
+
   return (
     <div className="app-shell">
       <div className="cinema-backdrop" aria-hidden="true" />
@@ -330,7 +368,7 @@ export default function App() {
                   <>
                     <p>Want a clue about your destination?</p>
                     <button className="hint-button" onClick={() => void revealHint()} disabled={loadingPuzzle}>
-                      Add hint <Icon name="arrow" />
+                      Hint <Icon name="arrow" />
                     </button>
                   </>
                 )}
@@ -354,6 +392,13 @@ export default function App() {
                     <p>This clue doesn’t add a step.</p>
                   </div>
                 )}
+                <button
+                  className="hint-button deluxe-hint-trigger"
+                  onClick={() => void revealDeluxeHint()}
+                  disabled={loadingPuzzle}
+                >
+                  Gold Hint <Icon name="arrow" />
+                </button>
               </section>
             </aside>
 
@@ -499,6 +544,67 @@ export default function App() {
             </div>
             <button className="button button-gold" onClick={() => void startPuzzle()}>Play another round <span>→</span></button>
             <button className="details-link" onClick={() => setCompletionDismissed(true)}>View movie or actor details below <span>↓</span></button>
+          </section>
+        </div>
+      )}
+      {deluxeHintOpen && puzzle && (
+        <div
+          className="modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setDeluxeHintOpen(false)
+          }}
+        >
+          <section className="deluxe-hint-modal" role="dialog" aria-modal="true" aria-labelledby="deluxe-hint-title">
+            <header className="deluxe-hint-header">
+              <div>
+                <p className="deluxe-hint-eyebrow">DELUXE HINT</p>
+                <h2 id="deluxe-hint-title">
+                  {puzzle.target.kind === 'actor' ? 'Popular movies' : 'Top-billed actors'}
+                </h2>
+                <p>
+                  {puzzle.target.kind === 'actor'
+                    ? `Explore popular movies featuring ${puzzle.target.name}.`
+                    : `Explore the first-billed cast of ${puzzle.target.name}.`}
+                </p>
+              </div>
+              <button
+                className="deluxe-hint-close"
+                onClick={() => setDeluxeHintOpen(false)}
+                aria-label="Close deluxe hint"
+                autoFocus
+              >
+                ×
+              </button>
+            </header>
+            {deluxeHintLoading && <p className="deluxe-hint-message" role="status"><span className="spinner small" /> Loading suggestions…</p>}
+            {deluxeHintError && (
+              <div className="deluxe-hint-error" role="alert">
+                <p>{deluxeHintError}</p>
+                <button className="hint-button" onClick={() => void revealDeluxeHint()}>Try again</button>
+              </div>
+            )}
+            {!deluxeHintLoading && !deluxeHintError && deluxeHints?.length === 0 && (
+              <p className="deluxe-hint-message">No destination credits are available for a hint.</p>
+            )}
+            {!deluxeHintLoading && !deluxeHintError && deluxeHints && deluxeHints.length > 0 && (
+              <ol className="deluxe-hint-list">
+                {deluxeHints.map((suggestion, index) => (
+                  <li className="deluxe-hint-item" key={entityKey(suggestion.entity)}>
+                    <span className="deluxe-hint-rank">{index + 1}</span>
+                    <EntityArtwork entity={suggestion.entity} className="deluxe-hint-artwork" />
+                    <span className="deluxe-hint-copy">
+                      <strong>{suggestion.entity.name}</strong>
+                      <small>{entityKindLabel(suggestion.entity.kind)}{suggestion.entity.year ? ` · ${suggestion.entity.year}` : ''}</small>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+            <footer className="deluxe-hint-footer">
+              <p>This clue doesn’t add a step.</p>
+              <button className="button button-gold" onClick={() => setDeluxeHintOpen(false)}>Got it</button>
+            </footer>
           </section>
         </div>
       )}
