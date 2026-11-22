@@ -681,13 +681,15 @@ export default function App() {
               <div className="data-note"><span>ⓘ</span> Connections use available TMDB credits; some cast and filmography data may be incomplete.</div>
             </section>
 
-            <section className="entity-details" aria-live="polite">
-              <EntityDetailsContent
-                entity={current}
-                connections={connectedEntities}
-                loadingConnections={loadingConnections}
-              />
-            </section>
+            {isComplete && completionDismissed && (
+              <section className="entity-details" aria-live="polite">
+                <EntityDetailsContent
+                  entity={current}
+                  connections={connectedEntities}
+                  loadingConnections={loadingConnections}
+                />
+              </section>
+            )}
           </div>
         )}
 
