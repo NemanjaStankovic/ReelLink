@@ -124,6 +124,11 @@ function EntityDetailsContent({
 
 type CollectionFilter = 'all' | 'movie' | 'actor'
 
+interface CardDetailsTarget {
+  entity: CatalogEntity
+  correctGuesses: number | null
+}
+
 export default function App() {
   const [view, setView] = useState<'game' | 'collection'>('game')
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null)
@@ -149,7 +154,7 @@ export default function App() {
   const [collectionFilter, setCollectionFilter] = useState<CollectionFilter>('all')
   const [collectionSearch, setCollectionSearch] = useState('')
   const [collectionError, setCollectionError] = useState('')
-  const [selectedCard, setSelectedCard] = useState<CollectedCard | null>(null)
+  const [selectedCard, setSelectedCard] = useState<CardDetailsTarget | null>(null)
   const [selectedCardDetails, setSelectedCardDetails] = useState<CatalogEntity | null>(null)
   const [selectedCardConnections, setSelectedCardConnections] = useState<CatalogEntity[]>([])
   const [selectedCardLoading, setSelectedCardLoading] = useState(false)
@@ -173,6 +178,8 @@ export default function App() {
 
   const current = path.at(-1)
   const isComplete = Boolean(puzzle && current && entityKey(current) === entityKey(puzzle.target))
+  const completionModalOpen = isComplete && !completionDismissed
+  const anyModalOpen = completionModalOpen || deluxeHintOpen || selectedCard !== null
   const bestPath = puzzle && gameGraph
     ? findShortestPath(gameGraph, entityKey(puzzle.start), entityKey(puzzle.target))
     : null
@@ -309,7 +316,7 @@ export default function App() {
     }
   }
 
-  const openCollectedCard = async (card: CollectedCard) => {
+  const openCollectedCard = async (card: CardDetailsTarget) => {
     const requestId = ++selectedCardRequest.current
     setSelectedCard(card)
     setSelectedCardDetails(null)
@@ -332,6 +339,15 @@ export default function App() {
   const closeCollectedCard = () => {
     selectedCardRequest.current++
     setSelectedCard(null)
+  }
+
+  const openPuzzleDestinationDetails = () => {
+    if (!puzzle) return
+    const savedCard = collection.find((card) => entityKey(card.entity) === entityKey(puzzle.target))
+    void openCollectedCard({
+      entity: puzzle.target,
+      correctGuesses: savedCard?.correctGuesses ?? null,
+    })
   }
 
   const rewindTo = (index: number) => {
@@ -397,6 +413,18 @@ export default function App() {
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [selectedCard])
+
+  useEffect(() => {
+    if (!anyModalOpen) return
+    const bodyOverflow = document.body.style.overflow
+    const documentOverflow = document.documentElement.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = bodyOverflow
+      document.documentElement.style.overflow = documentOverflow
+    }
+  }, [anyModalOpen])
 
   return (
     <div className="app-shell">
@@ -681,15 +709,6 @@ export default function App() {
               <div className="data-note"><span>ⓘ</span> Connections use available TMDB credits; some cast and filmography data may be incomplete.</div>
             </section>
 
-            {isComplete && completionDismissed && (
-              <section className="entity-details" aria-live="polite">
-                <EntityDetailsContent
-                  entity={current}
-                  connections={connectedEntities}
-                  loadingConnections={loadingConnections}
-                />
-              </section>
-            )}
           </div>
         )}
 
@@ -700,7 +719,7 @@ export default function App() {
         </footer>
       </main>
 
-      {isComplete && puzzle && !completionDismissed && (
+      {completionModalOpen && puzzle && (
         <div className="modal-backdrop" role="presentation">
           <section className="completion-modal" role="dialog" aria-modal="true" aria-labelledby="completion-title">
             <div className="completion-star">✦</div>
@@ -719,7 +738,15 @@ export default function App() {
               {path.length - 1 === shortestSteps ? '✦ Optimal route!' : 'There’s a shorter route to discover.'}
             </div>
             <button className="button button-gold" onClick={() => void startPuzzle()}>Play another round <span>→</span></button>
-            <button className="details-link" onClick={() => setCompletionDismissed(true)}>View movie or actor details below <span>↓</span></button>
+            <button
+              className="details-link"
+              onClick={() => {
+                setCompletionDismissed(true)
+                openPuzzleDestinationDetails()
+              }}
+            >
+              View destination details <span>↗</span>
+            </button>
           </section>
         </div>
       )}
@@ -801,7 +828,9 @@ export default function App() {
             <header className="collection-detail-header">
               <div>
                 <p className="collection-kicker">COLLECTION CARD</p>
-                <span>{selectedCard.correctGuesses} correct {selectedCard.correctGuesses === 1 ? 'guess' : 'guesses'}</span>
+                {selectedCard.correctGuesses !== null && (
+                  <span>{selectedCard.correctGuesses} correct {selectedCard.correctGuesses === 1 ? 'guess' : 'guesses'}</span>
+                )}
               </div>
               <button
                 className="deluxe-hint-close"

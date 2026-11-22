@@ -29,7 +29,7 @@ To keep random puzzle creation bounded, the generator samples up to four weekly 
 
 The optional destination hint uses the destination actor's most-popular returned film, or the first actor in a destination movie's returned cast order. TMDB cast order is a top-billing signal, not a guarantee of the movie's lead actor. Hints do not add a move.
 
-Movie and actor details are hidden during play. After completing a puzzle, choose “View movie or actor details below” on the completion screen to reveal the destination's movie overview and TMDB rating, or actor biography and popular movie credits.
+Movie and actor details are hidden during play. After completing a puzzle, choose “View destination details” on the completion screen to open a modal with the destination's movie overview and TMDB rating, or actor biography and popular movie credits. Collection-card, hint, and completion modals lock background scrolling; longer modal content scrolls within the modal.
 
 Successful TMDB responses are cached in memory for one hour, duplicate in-flight requests are coalesced, outbound concurrency is limited to three requests, and requests time out after 10 seconds. HTTP 429 responses are returned with their `Retry-After` header when TMDB provides one. The cache is process-local and is not shared across instances.
 
