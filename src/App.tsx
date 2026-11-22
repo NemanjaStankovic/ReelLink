@@ -379,7 +379,7 @@ export default function App() {
                         disabled={index === path.length - 1 || isComplete}
                         aria-label={index < path.length - 1 ? `Return to ${entity.name}` : `Current: ${entity.name}`}
                       >
-                        <span className={`route-kind ${entity.kind}`}>{entity.kind === 'movie' ? 'M' : 'A'}</span>
+                        <EntityArtwork entity={entity} className="route-thumbnail" />
                         <span>{entity.name}</span>
                       </button>
                       {index < path.length - 1 && <span className="route-arrow" aria-hidden="true">›</span>}
