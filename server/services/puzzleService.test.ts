@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { buildGraph, findShortestPath } from '../../src/game/graph.js'
+import { describe, expect, it, vi } from 'vitest'
+import { buildGraph, findShortestDistances, findShortestPath } from '../../src/game/graph.js'
 import type { GameEntity } from '../../src/game/model.js'
 import type { CatalogEntity } from '../../src/api/types.js'
 import { PuzzleService } from './puzzleService.js'
@@ -53,6 +53,42 @@ describe('PuzzleService', () => {
 
     expect(shortest?.steps).toBe(puzzle.shortestSteps)
     expect(puzzle.shortestSteps).toBeGreaterThanOrEqual(2)
+    expect(puzzle.shortestSteps).toBeLessThanOrEqual(9)
     expect(puzzle.start.id).not.toBe(puzzle.target.id)
+  })
+
+  it('expands credits enough to support a nine-transition route for Gold puzzles', async () => {
+    const movies = Array.from({ length: 5 }, (_, index) => movie(`${index}`, `Film ${index}`))
+    const actors = Array.from({ length: 5 }, (_, index) => actor(`${index}`, `Actor ${index}`))
+    const service = new PuzzleService({
+      getTrendingMovies: async () => [movies[0]],
+      getConnections: async (kind, id) => {
+        const index = Number(id)
+        if (kind === 'movie') return actors[index] ? [actors[index]] : []
+        return movies[index + 1] ? [movies[index + 1]] : []
+      },
+    })
+    const random = vi.spyOn(Math, 'random').mockImplementationOnce(() => 0.95).mockReturnValue(0)
+
+    try {
+      const puzzle = await service.createRandomPuzzle()
+      const graph = buildGraph(
+        puzzle.graph.nodes.map((entity) => ({
+          id: `${entity.kind}:${entity.id}`,
+          kind: entity.kind,
+          name: entity.name,
+        })),
+        puzzle.graph.edges.map(({ movieId, actorId }) => ({
+          movieId: `movie:${movieId}`,
+          actorId: `actor:${actorId}`,
+        })),
+      )
+
+      expect(findShortestDistances(graph, 'movie:0').get('actor:4')).toBe(9)
+      expect(puzzle.shortestSteps).toBeGreaterThanOrEqual(7)
+      expect(puzzle.shortestSteps).toBeLessThanOrEqual(9)
+    } finally {
+      random.mockRestore()
+    }
   })
 })

@@ -15,6 +15,9 @@
   --faint: #8186a8;
   --gold: #ffba26;
   --blue: #8990dc;
+  --bronze: #c98d5d;
+  --silver: #cbd4e2;
+  --difficulty-gold: #ffd166;
 }
 
 * { box-sizing: border-box; }
@@ -61,11 +64,16 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .collection-search { width: min(250px, 42%); min-width: 165px; }
 .collection-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 13px; }
 .collection-card { position: relative; min-width: 0; overflow: hidden; aspect-ratio: 4 / 5; padding: 0; border: 1px solid rgba(181,181,222,.38); border-radius: 11px; color: #fff; background: linear-gradient(145deg, #393d5c, #181b33); cursor: pointer; isolation: isolate; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
-.collection-card:hover { transform: translateY(-3px); border-color: var(--gold); box-shadow: 0 9px 22px rgba(0,0,0,.32), 0 0 0 1px rgba(255,186,38,.2); }
+.collection-card:hover { transform: translateY(-3px); border-color: var(--card-difficulty-color, var(--gold)); box-shadow: 0 9px 22px rgba(0,0,0,.32), 0 0 0 1px color-mix(in srgb, var(--card-difficulty-color, var(--gold)) 30%, transparent); }
 .collection-card-artwork { position: absolute; z-index: -2; inset: 0; width: 100%; height: 100%; display: block; object-fit: cover; object-position: center 24%; }
 .collection-card-artwork.artwork-placeholder { display: grid; }
 .collection-card-shade { position: absolute; z-index: -1; inset: 24% 0 0; background: linear-gradient(180deg, transparent 0%, rgba(10,12,27,.56) 35%, rgba(10,12,27,.98) 100%); pointer-events: none; }
 .collection-card-kind { position: absolute; top: 9px; left: 9px; padding: 5px 7px; border: 1px solid rgba(255,255,255,.2); border-radius: 6px; color: #f1e8c9; background: rgba(12,14,30,.68); font-size: 7px; font-weight: 700; letter-spacing: .8px; text-transform: uppercase; }
+.collection-tier-badge { position: absolute; top: 9px; right: 9px; padding: 5px 7px; border: 1px solid var(--difficulty-color); border-radius: 6px; color: var(--difficulty-color); background: rgba(12,14,30,.82); font-size: 7px; font-weight: 700; letter-spacing: .7px; }
+.difficulty-bronze { --difficulty-color: var(--bronze); --card-difficulty-color: var(--bronze); }
+.difficulty-silver { --difficulty-color: var(--silver); --card-difficulty-color: var(--silver); }
+.difficulty-gold { --difficulty-color: var(--difficulty-gold); --card-difficulty-color: var(--difficulty-gold); }
+.difficulty-unranked { --difficulty-color: #9da2bd; }
 .collection-card-title { position: absolute; right: 44px; bottom: 12px; left: 9px; overflow: hidden; color: #f4f3fa; font-size: 10px; font-weight: 700; line-height: 1.3; text-align: left; text-overflow: ellipsis; text-shadow: 0 1px 5px #090b1e; }
 .collection-guess-count { position: absolute; right: 9px; bottom: 8px; min-width: 29px; height: 29px; display: grid; place-items: center; padding: 0 5px; border: 2px solid rgba(255,255,255,.82); border-radius: 50%; color: #211a0b; background: var(--gold); box-shadow: 0 2px 8px rgba(0,0,0,.36); font-size: 9px; font-weight: 700; }
 .collection-empty { min-height: 300px; display: grid; align-content: center; justify-items: center; gap: 9px; color: var(--muted); text-align: center; }
@@ -76,6 +84,11 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .challenge-panel, .cast-panel, .score-card, .error-panel, .loading-panel { border: 1px solid var(--border); border-radius: 17px; background: var(--surface); box-shadow: 0 16px 40px rgba(4,6,22,.16), inset 0 1px 0 rgba(255,255,255,.025); backdrop-filter: blur(9px); }
 .challenge-panel { grid-area: challenge; min-width: 0; padding: 15px 20px 17px; background: linear-gradient(115deg, rgba(25,28,54,.96), rgba(21,24,46,.93)); }
 .challenge-topline { display: flex; align-items: center; justify-content: space-between; color: #898dad; font-size: 8px; font-weight: 700; letter-spacing: 1.7px; }
+.challenge-actions { display: flex; align-items: center; gap: 7px; }
+.difficulty-badge { min-height: 27px; display: inline-flex; align-items: center; justify-content: center; padding: 0 9px; border: 1px solid var(--difficulty-color); border-radius: 14px; color: var(--difficulty-color); background: color-mix(in srgb, var(--difficulty-color) 10%, transparent); font-size: 8px; font-weight: 700; letter-spacing: 1px; }
+.target-poster-frame.difficulty-bronze { border-color: var(--bronze); box-shadow: 0 8px 22px rgba(0,0,0,.27), 0 0 0 3px color-mix(in srgb, var(--bronze) 25%, transparent); }
+.target-poster-frame.difficulty-silver { border-color: var(--silver); box-shadow: 0 8px 22px rgba(0,0,0,.27), 0 0 0 3px color-mix(in srgb, var(--silver) 25%, transparent); }
+.target-poster-frame.difficulty-gold { border-color: var(--difficulty-gold); box-shadow: 0 8px 22px rgba(0,0,0,.27), 0 0 0 3px color-mix(in srgb, var(--difficulty-gold) 25%, transparent); }
 .challenge-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid rgba(255,186,38,.22); border-radius: 14px; color: var(--gold); background: rgba(255,186,38,.075); font-size: 8px; letter-spacing: 1px; cursor: pointer; transition: background .16s ease, border-color .16s ease; }
 .challenge-badge:hover:not(:disabled) { border-color: rgba(255,186,38,.55); background: rgba(255,186,38,.14); }
 .challenge-badge:disabled { opacity: .55; cursor: wait; }
@@ -301,6 +314,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
   .challenge-panel { padding: 12px 10px 14px; border-radius: 14px; }
   .challenge-topline { font-size: 7px; letter-spacing: 1px; }
   .challenge-badge { padding: 5px 7px; font-size: 7px; }
+  .challenge-actions { gap: 5px; }
+  .difficulty-badge { min-height: 25px; padding: 0 7px; font-size: 7px; }
   .challenge-layout { min-height: 180px; grid-template-columns: minmax(64px, 94px) 15px minmax(0, 1fr) 15px minmax(64px, 94px); gap: 5px; padding: 9px 2px 0; }
   .poster-frame { height: 128px; border-width: 1px; border-radius: 8px; }
   .hero-arrow .icon { width: 17px; height: 17px; }

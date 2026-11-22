@@ -1,4 +1,6 @@
 import type { CatalogEntity } from '../api/types.js'
+import { getHigherDifficulty } from './difficulty.js'
+import type { DifficultyTier } from './difficulty.js'
 
 const STORAGE_KEY = 'reellink.collection.v1'
 
@@ -7,6 +9,7 @@ export interface CollectedCard {
   correctGuesses: number
   firstGuessedAt: string
   lastGuessedAt: string
+  bestDifficulty: DifficultyTier
 }
 
 export function readCollection(storage: Storage = window.localStorage): CollectedCard[] {
@@ -15,10 +18,10 @@ export function readCollection(storage: Storage = window.localStorage): Collecte
 
   try {
     const parsed: unknown = JSON.parse(saved)
-    if (!Array.isArray(parsed) || !parsed.every(isCollectedCard)) {
+    if (!Array.isArray(parsed) || !parsed.every(isStoredCollectedCard)) {
       throw new Error('Stored ReelLink collection has an invalid shape.')
     }
-    return parsed
+    return parsed.map((card) => ({ ...card, bestDifficulty: card.bestDifficulty ?? 'bronze' }))
   } catch (error) {
     storage.removeItem(STORAGE_KEY)
     if (error instanceof SyntaxError) return []
@@ -30,6 +33,7 @@ export function readCollection(storage: Storage = window.localStorage): Collecte
 export function recordCorrectGuess(
   storage: Storage,
   entity: CatalogEntity,
+  difficulty: DifficultyTier,
   guessedAt = new Date().toISOString(),
 ): CollectedCard[] {
   const collection = readCollection(storage)
@@ -44,6 +48,7 @@ export function recordCorrectGuess(
       correctGuesses: 1,
       firstGuessedAt: guessedAt,
       lastGuessedAt: guessedAt,
+      bestDifficulty: difficulty,
     })
   } else {
     const previous = updated[cardIndex]
@@ -52,6 +57,7 @@ export function recordCorrectGuess(
       entity,
       correctGuesses: previous.correctGuesses + 1,
       lastGuessedAt: guessedAt,
+      bestDifficulty: getHigherDifficulty(previous.bestDifficulty, difficulty),
     }
   }
 
@@ -59,14 +65,20 @@ export function recordCorrectGuess(
   return updated
 }
 
-function isCollectedCard(value: unknown): value is CollectedCard {
+type StoredCollectedCard = Omit<CollectedCard, 'bestDifficulty'> & { bestDifficulty?: DifficultyTier }
+
+function isStoredCollectedCard(value: unknown): value is StoredCollectedCard {
   if (typeof value !== 'object' || value === null) return false
-  const card = value as Partial<CollectedCard>
+  const card = value as Partial<StoredCollectedCard>
   return isCatalogEntity(card.entity)
     && Number.isInteger(card.correctGuesses)
     && (card.correctGuesses ?? 0) > 0
     && typeof card.firstGuessedAt === 'string'
     && typeof card.lastGuessedAt === 'string'
+    && (card.bestDifficulty === undefined
+      || card.bestDifficulty === 'bronze'
+      || card.bestDifficulty === 'silver'
+      || card.bestDifficulty === 'gold')
 }
 
 function isCatalogEntity(value: unknown): value is CatalogEntity {

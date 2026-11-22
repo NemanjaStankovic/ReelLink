@@ -30,17 +30,43 @@ describe('local player collection', () => {
     const film = entity('movie', '1')
     const actor = entity('actor', '1')
 
-    recordCorrectGuess(storage, film, '2026-01-01T00:00:00.000Z')
-    recordCorrectGuess(storage, actor, '2026-01-02T00:00:00.000Z')
-    const collection = recordCorrectGuess(storage, film, '2026-01-03T00:00:00.000Z')
+    recordCorrectGuess(storage, film, 'bronze', '2026-01-01T00:00:00.000Z')
+    recordCorrectGuess(storage, actor, 'silver', '2026-01-02T00:00:00.000Z')
+    const collection = recordCorrectGuess(storage, film, 'bronze', '2026-01-03T00:00:00.000Z')
 
     expect(collection).toHaveLength(2)
     expect(collection.find((card) => card.entity.kind === 'movie')).toMatchObject({
       correctGuesses: 2,
       firstGuessedAt: '2026-01-01T00:00:00.000Z',
       lastGuessedAt: '2026-01-03T00:00:00.000Z',
+      bestDifficulty: 'bronze',
     })
     expect(readCollection(storage)).toEqual(collection)
+  })
+
+  it('keeps the highest difficulty earned and upgrades legacy cards as they are guessed', () => {
+    const storage = createStorage()
+    const film = entity('movie', '1')
+    storage.setItem('reellink.collection.v1', JSON.stringify([{
+      entity: film,
+      correctGuesses: 2,
+      firstGuessedAt: '2026-01-01T00:00:00.000Z',
+      lastGuessedAt: '2026-01-02T00:00:00.000Z',
+    }]))
+
+    expect(readCollection(storage)[0].bestDifficulty).toBe('bronze')
+    recordCorrectGuess(storage, film, 'silver', '2026-01-03T00:00:00.000Z')
+    const collection = recordCorrectGuess(storage, film, 'bronze', '2026-01-04T00:00:00.000Z')
+
+    expect(collection[0]).toMatchObject({ correctGuesses: 4, bestDifficulty: 'silver' })
+  })
+
+  it('upgrades a collection card when a higher tier is earned', () => {
+    const storage = createStorage()
+    const film = entity('movie', '1')
+    recordCorrectGuess(storage, film, 'silver')
+
+    expect(recordCorrectGuess(storage, film, 'gold')[0].bestDifficulty).toBe('gold')
   })
 
   it('resets malformed stored collection data', () => {

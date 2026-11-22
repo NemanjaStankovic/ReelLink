@@ -46,6 +46,25 @@ export function findShortestPath(graph: GameGraph, startId: string, targetId: st
   return null
 }
 
+export function findShortestDistances(graph: GameGraph, startId: string): Map<string, number> {
+  if (!graph.entities.has(startId)) return new Map()
+
+  const distances = new Map<string, number>([[startId, 0]])
+  const queue = [startId]
+
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const currentId = queue[cursor]
+    const nextDistance = distances.get(currentId)! + 1
+    for (const neighborId of graph.neighbors.get(currentId) ?? []) {
+      if (distances.has(neighborId)) continue
+      distances.set(neighborId, nextDistance)
+      queue.push(neighborId)
+    }
+  }
+
+  return distances
+}
+
 export function isValidNextEntity(
   graph: GameGraph,
   path: GameEntity[],

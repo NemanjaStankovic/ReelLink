@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildGraph, findShortestPath, isValidNextEntity } from './graph.js'
+import { buildGraph, findShortestDistances, findShortestPath, isValidNextEntity } from './graph.js'
 import type { Credit, GameEntity } from './model.js'
 
 const entities: GameEntity[] = [
@@ -45,6 +45,23 @@ describe('findShortestPath', () => {
       [...credits, { movieId: 'm1', actorId: 'a4' }, { movieId: 'm2', actorId: 'a4' }],
     )
     expect(findShortestPath(cyclicGraph, 'a1', 'a3')?.steps).toBe(4)
+  })
+})
+
+describe('findShortestDistances', () => {
+  it('returns shortest transition counts and excludes unreachable nodes', () => {
+    expect(findShortestDistances(graph, 'm1')).toEqual(new Map([
+      ['m1', 0],
+      ['a1', 1],
+      ['m2', 2],
+      ['a2', 3],
+      ['m3', 4],
+      ['a3', 5],
+    ]))
+  })
+
+  it('returns no distances for a missing start node', () => {
+    expect(findShortestDistances(graph, 'missing')).toEqual(new Map())
   })
 })
 

@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { getConnections, getRandomPuzzle } from './api/client'
 import type { CatalogEntity, Puzzle } from './api/types'
 import { buildGraph, findShortestPath, isValidNextEntity } from './game/graph'
+import { getDifficultyTier } from './game/difficulty'
 import type { Credit, GameEntity } from './game/model'
 import { selectPuzzleHint, selectPuzzleHints } from './game/hints'
 import type { PuzzleHint } from './game/hints'
@@ -184,6 +185,7 @@ export default function App() {
     ? findShortestPath(gameGraph, entityKey(puzzle.start), entityKey(puzzle.target))
     : null
   const shortestSteps = bestPath?.steps ?? puzzle?.shortestSteps ?? 0
+  const puzzleDifficulty = puzzle ? getDifficultyTier(puzzle.shortestSteps) : null
   const visibleCollection = useMemo(() => {
     const query = collectionSearch.trim().toLocaleLowerCase()
     return collection
@@ -306,8 +308,12 @@ export default function App() {
     if (!isValidNextEntity(gameGraph, path.map(toGameEntity), entityKey(entity))) return
     setPath((previous) => [...previous, entity])
     setFilter('')
+    if (!puzzleDifficulty) {
+      setCollectionError('Could not save your collection: this puzzle has no supported difficulty tier.')
+      return
+    }
     try {
-      setCollection(recordCorrectGuess(window.localStorage, entity))
+      setCollection(recordCorrectGuess(window.localStorage, entity, puzzleDifficulty))
       setCollectionError('')
     } catch (requestError) {
       setCollectionError(requestError instanceof Error
@@ -505,14 +511,17 @@ export default function App() {
               <div className="collection-grid">
                 {visibleCollection.map((card) => (
                   <button
-                    className="collection-card"
+                    className={`collection-card difficulty-${card.bestDifficulty}`}
                     key={entityKey(card.entity)}
                     onClick={() => void openCollectedCard(card)}
-                    aria-label={`${card.entity.name}, ${card.correctGuesses} correct ${card.correctGuesses === 1 ? 'guess' : 'guesses'}`}
+                    aria-label={`${card.entity.name}, ${card.correctGuesses} correct ${card.correctGuesses === 1 ? 'guess' : 'guesses'}, best tier ${card.bestDifficulty}`}
                   >
                     <EntityArtwork entity={card.entity} className="collection-card-artwork" />
                     <span className="collection-card-shade" />
                     <span className="collection-card-kind">{entityKindLabel(card.entity.kind)}</span>
+                    <span className={`collection-tier-badge difficulty-${card.bestDifficulty}`}>
+                      {card.bestDifficulty.toUpperCase()}
+                    </span>
                     <span className="collection-card-title">{card.entity.name}</span>
                     <span className="collection-guess-count" title={`${card.correctGuesses} correct ${card.correctGuesses === 1 ? 'guess' : 'guesses'}`}>
                       {card.correctGuesses > 99 ? '99+' : card.correctGuesses}
@@ -544,16 +553,23 @@ export default function App() {
             <section className="challenge-panel">
               <div className="challenge-topline">
                 <span>YOUR NEXT CINEMA CONNECTION</span>
-                <button
-                  type="button"
-                  className="challenge-badge"
-                  onClick={() => void startPuzzle()}
-                  disabled={loadingPuzzle}
-                  aria-label="Get another random puzzle"
-                  title="Get another random puzzle"
-                >
-                  <Icon name="dice" /><span>RANDOM</span>
-                </button>
+                <div className="challenge-actions">
+                  {puzzleDifficulty ? (
+                    <span className={`difficulty-badge difficulty-${puzzleDifficulty}`}>
+                      {puzzleDifficulty.toUpperCase()}
+                    </span>
+                  ) : <span className="difficulty-badge difficulty-unranked">UNRANKED</span>}
+                  <button
+                    type="button"
+                    className="challenge-badge"
+                    onClick={() => void startPuzzle()}
+                    disabled={loadingPuzzle}
+                    aria-label="Get another random puzzle"
+                    title="Get another random puzzle"
+                  >
+                    <Icon name="dice" /><span>RANDOM</span>
+                  </button>
+                </div>
               </div>
               <div className="challenge-layout">
                 <div className="hero-entity start-entity">
@@ -572,7 +588,7 @@ export default function App() {
                 </div>
                 <span className="hero-arrow second-arrow" aria-hidden="true"><Icon name="arrow" /></span>
                 <div className="hero-entity target-entity">
-                  <div className="poster-frame">
+                  <div className={`poster-frame target-poster-frame${puzzleDifficulty ? ` difficulty-${puzzleDifficulty}` : ''}`}>
                     <EntityArtwork entity={puzzle.target} className="poster-image" />
                   </div>
                   <span className="poster-label">DESTINATION</span>
