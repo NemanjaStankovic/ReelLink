@@ -4,6 +4,7 @@ import { getConnections, getRandomPuzzle } from './api/client'
 import type { CatalogEntity, Puzzle } from './api/types'
 import { buildGraph, findShortestPath, isValidNextEntity } from './game/graph'
 import { getDifficultyTier } from './game/difficulty'
+import type { DifficultyTier } from './game/difficulty'
 import type { Credit, GameEntity } from './game/model'
 import { selectPuzzleHint, selectPuzzleHints } from './game/hints'
 import type { PuzzleHint } from './game/hints'
@@ -124,6 +125,7 @@ function EntityDetailsContent({
 }
 
 type CollectionFilter = 'all' | 'movie' | 'actor'
+type CollectionTierFilter = 'all' | DifficultyTier
 
 interface CardDetailsTarget {
   entity: CatalogEntity
@@ -153,6 +155,7 @@ export default function App() {
   const [playerStats, setPlayerStats] = useState<PlayerStats>(() => readPlayerStats())
   const [collection, setCollection] = useState<CollectedCard[]>(() => readCollection())
   const [collectionFilter, setCollectionFilter] = useState<CollectionFilter>('all')
+  const [collectionTierFilter, setCollectionTierFilter] = useState<CollectionTierFilter>('all')
   const [collectionSearch, setCollectionSearch] = useState('')
   const [collectionError, setCollectionError] = useState('')
   const [selectedCard, setSelectedCard] = useState<CardDetailsTarget | null>(null)
@@ -190,9 +193,10 @@ export default function App() {
     const query = collectionSearch.trim().toLocaleLowerCase()
     return collection
       .filter((card) => collectionFilter === 'all' || card.entity.kind === collectionFilter)
+      .filter((card) => collectionTierFilter === 'all' || card.bestDifficulty === collectionTierFilter)
       .filter((card) => !query || card.entity.name.toLocaleLowerCase().includes(query))
       .sort((a, b) => b.lastGuessedAt.localeCompare(a.lastGuessedAt))
-  }, [collection, collectionFilter, collectionSearch])
+  }, [collection, collectionFilter, collectionTierFilter, collectionSearch])
 
   const startPuzzle = async () => {
     setView('game')
@@ -468,21 +472,40 @@ export default function App() {
             </header>
 
             <div className="collection-toolbar">
-              <div className="collection-filters" role="group" aria-label="Filter collection by type">
-                {([
-                  ['all', 'All', collection.length],
-                  ['movie', 'Movies', collection.filter((card) => card.entity.kind === 'movie').length],
-                  ['actor', 'Actors', collection.filter((card) => card.entity.kind === 'actor').length],
-                ] as const).map(([kind, label, count]) => (
-                  <button
-                    key={kind}
-                    className={`collection-filter ${collectionFilter === kind ? 'active' : ''}`}
-                    onClick={() => setCollectionFilter(kind)}
-                    aria-pressed={collectionFilter === kind}
-                  >
-                    {label}<span>{count}</span>
-                  </button>
-                ))}
+              <div className="collection-filter-groups">
+                <div className="collection-filters" role="group" aria-label="Filter collection by type">
+                  {([
+                    ['all', 'All', collection.length],
+                    ['movie', 'Movies', collection.filter((card) => card.entity.kind === 'movie').length],
+                    ['actor', 'Actors', collection.filter((card) => card.entity.kind === 'actor').length],
+                  ] as const).map(([kind, label, count]) => (
+                    <button
+                      key={kind}
+                      className={`collection-filter ${collectionFilter === kind ? 'active' : ''}`}
+                      onClick={() => setCollectionFilter(kind)}
+                      aria-pressed={collectionFilter === kind}
+                    >
+                      {label}<span>{count}</span>
+                    </button>
+                  ))}
+                </div>
+                <div className="collection-filters collection-tier-filters" role="group" aria-label="Filter collection by highest tier">
+                  {([
+                    ['all', 'All tiers', collection.length],
+                    ['bronze', 'Bronze', collection.filter((card) => card.bestDifficulty === 'bronze').length],
+                    ['silver', 'Silver', collection.filter((card) => card.bestDifficulty === 'silver').length],
+                    ['gold', 'Gold', collection.filter((card) => card.bestDifficulty === 'gold').length],
+                  ] as const).map(([tier, label, count]) => (
+                    <button
+                      key={tier}
+                      className={`collection-filter collection-tier-filter${tier !== 'all' ? ` difficulty-${tier}` : ''} ${collectionTierFilter === tier ? 'active' : ''}`}
+                      onClick={() => setCollectionTierFilter(tier)}
+                      aria-pressed={collectionTierFilter === tier}
+                    >
+                      {label}<span>{count}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
               <label className="search-field collection-search">
                 <Icon name="search" />
