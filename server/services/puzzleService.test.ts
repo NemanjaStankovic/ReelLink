@@ -63,7 +63,7 @@ describe('PuzzleService', () => {
     const actors = Array.from({ length: 5 }, (_, index) => actor(`${index}`, `Actor ${index}`))
     const getConnections = vi.fn(async (kind: CatalogEntity['kind'], id: string) => {
       if (kind === 'movie') return actors[Number(id) * 2] ? [actors[Number(id) * 2]] : []
-      if (kind === 'tv') return actors[Number(id) * 2 + 1] ? [actors[Number(id) * 2 + 1]] : []
+      if (kind === 'tv') return actors.slice(Number(id) * 2, Number(id) * 2 + 2)
       const mediaByActor = [series[0], movies[1], series[1], movies[2]]
       return mediaByActor[Number(id)] ? [mediaByActor[Number(id)]] : []
     })
@@ -89,6 +89,62 @@ describe('PuzzleService', () => {
       expect(puzzle.graph.edges.some(({ mediaKind }) => mediaKind === 'tv')).toBe(true)
       expect(puzzle.shortestSteps).toBeGreaterThanOrEqual(7)
       expect(puzzle.shortestSteps).toBeLessThanOrEqual(9)
+    } finally {
+      random.mockRestore()
+    }
+  })
+
+  it('limits the TV puzzle graph to the ten main cast members', async () => {
+    const seedMovie = movie('1', 'Seed Film')
+    const series = tv('1', 'Series')
+    const actors = Array.from({ length: 25 }, (_, index) => actor(`${index + 1}`, `Actor ${index + 1}`))
+    const getConnections = vi.fn(async (kind: CatalogEntity['kind'], id: string) => {
+      if (kind === 'movie') return [actors[0]]
+      if (kind === 'tv') return actors
+      return id === actors[0].id ? [series] : []
+    })
+    const service = new PuzzleService({
+      getTrendingMovies: async () => [seedMovie],
+      getConnections,
+    })
+    const random = vi.spyOn(Math, 'random').mockImplementationOnce(() => 0.95).mockReturnValue(0)
+
+    try {
+      const puzzle = await service.createRandomPuzzle()
+
+      expect(getConnections).toHaveBeenCalledWith('tv', series.id)
+      expect(puzzle.graph.edges.filter(({ mediaKind, movieId }) =>
+        mediaKind === 'tv' && movieId === series.id,
+      )).toHaveLength(10)
+    } finally {
+      random.mockRestore()
+    }
+  })
+
+  it('does not add puzzle paths through TV guest actors outside the main cast', async () => {
+    const seedMovie = movie('1', 'Seed Film')
+    const series = tv('99', 'Series')
+    const mainActor = actor('10', 'Main Actor')
+    const guestActor = actor('20', 'Guest Actor')
+    const service = new PuzzleService({
+      getTrendingMovies: async () => [seedMovie],
+      getConnections: async () => [],
+      getPuzzleConnections: async (kind) => {
+        if (kind === 'movie') return [mainActor, guestActor]
+        if (kind === 'actor') return [series]
+        if (kind === 'tv') return [mainActor]
+        return []
+      },
+    })
+    const random = vi.spyOn(Math, 'random').mockImplementationOnce(() => 0.95).mockReturnValue(0)
+
+    try {
+      const puzzle = await service.createRandomPuzzle()
+      const tvEdges = puzzle.graph.edges.filter(({ mediaKind, movieId }) =>
+        mediaKind === 'tv' && movieId === series.id,
+      )
+
+      expect(tvEdges.map(({ actorId }) => actorId)).toEqual([mainActor.id])
     } finally {
       random.mockRestore()
     }

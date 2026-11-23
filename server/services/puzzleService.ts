@@ -8,6 +8,7 @@ import type { CatalogEntity, Puzzle } from '../../src/api/types.js'
 interface PuzzleCatalog {
   getTrendingMovies(): Promise<CatalogEntity[]>
   getConnections(kind: EntityKind, id: string): Promise<CatalogEntity[]>
+  getPuzzleConnections?(kind: EntityKind, id: string): Promise<CatalogEntity[]>
 }
 
 interface PuzzleCandidate {
@@ -20,6 +21,7 @@ const SEED_MOVIE_LIMIT = 4
 const SEED_ACTOR_LIMIT = 3
 const EXPANSION_BATCH_LIMIT = 2
 const MAX_EXPANSION_ROUNDS = 4
+const PUZZLE_TV_CAST_LIMIT = 10
 
 const shuffled = <T>(items: T[]): T[] => {
   const result = [...items]
@@ -92,6 +94,27 @@ function chooseAvailableCandidate(
 export class PuzzleService {
   constructor(private readonly catalog: PuzzleCatalog) {}
 
+  private getPuzzleConnections(
+    kind: EntityKind,
+    id: string,
+    tvConnections: Map<string, Promise<CatalogEntity[]>>,
+  ): Promise<CatalogEntity[]> {
+    const loadConnections = async () => {
+      const connections = await (this.catalog.getPuzzleConnections
+        ? this.catalog.getPuzzleConnections(kind, id)
+        : this.catalog.getConnections(kind, id))
+      return kind === 'tv' ? connections.slice(0, PUZZLE_TV_CAST_LIMIT) : connections
+    }
+
+    if (kind !== 'tv') return loadConnections()
+    let connections = tvConnections.get(id)
+    if (!connections) {
+      connections = loadConnections()
+      tvConnections.set(id, connections)
+    }
+    return connections
+  }
+
   async createRandomPuzzle(): Promise<Puzzle> {
     const requestedDifficulty = chooseRequestedDifficulty()
     const seedMovies = shuffled(await this.catalog.getTrendingMovies()).slice(0, SEED_MOVIE_LIMIT)
@@ -100,6 +123,9 @@ export class PuzzleService {
     const creditKeys = new Set<string>()
     const expandedMediaKeys = new Set<string>()
     const expandedActorIds = new Set<string>()
+    const tvConnections = new Map<string, Promise<CatalogEntity[]>>()
+    const getPuzzleConnections = (kind: EntityKind, id: string) =>
+      this.getPuzzleConnections(kind, id, tvConnections)
 
     const addCredit = (media: MediaEntity, actorId: string) => {
       const key = `${media.kind}:${media.id}:${actorId}`
@@ -112,10 +138,10 @@ export class PuzzleService {
       const pending = mediaItems.filter(isMediaEntity)
         .filter((media) => !expandedMediaKeys.has(entityKey(media)))
       pending.forEach((media) => expandedMediaKeys.add(entityKey(media)))
-      const casts = await Promise.all(pending.map(async (media) => ({
-        media,
-        cast: await this.catalog.getConnections(media.kind, media.id),
-      })))
+      const casts = await Promise.all(pending.map(async (media) => {
+        const connections = await getPuzzleConnections(media.kind, media.id)
+        return { media, cast: connections }
+      }))
       const actors = new Map<string, CatalogEntity>()
       for (const { media, cast } of casts) {
         entities.set(entityKey(media), media)
@@ -133,13 +159,21 @@ export class PuzzleService {
       pending.forEach((actor) => expandedActorIds.add(actor.id))
       const filmographies = await Promise.all(pending.map(async (actor) => ({
         actor,
-        credits: await this.catalog.getConnections('actor', actor.id),
+        credits: await getPuzzleConnections('actor', actor.id),
+      })))
+      const filteredFilmographies = await Promise.all(filmographies.map(async ({ actor, credits }) => ({
+        actor,
+        credits: await Promise.all(credits.filter(isMediaEntity).map(async (credit) => {
+          if (credit.kind !== 'tv') return credit
+          const mainCast = await getPuzzleConnections('tv', credit.id)
+          return mainCast.some(({ id }) => id === actor.id) ? credit : null
+        })),
       })))
       const media = new Map<string, CatalogEntity>()
-      for (const { actor, credits: filmography } of filmographies) {
+      for (const { actor, credits: filmography } of filteredFilmographies) {
         entities.set(entityKey(actor), actor)
         for (const credit of filmography) {
-          if (!isMediaEntity(credit)) continue
+          if (!credit) continue
           entities.set(entityKey(credit), credit)
           media.set(entityKey(credit), credit)
           addCredit(credit, actor.id)

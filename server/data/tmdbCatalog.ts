@@ -21,6 +21,8 @@ interface TmdbTv {
   overview?: string
   popularity?: number
   vote_average?: number
+  genres?: Array<{ id: number; name: string }>
+  seasons?: Array<{ season_number: number; episode_count?: number }>
 }
 
 interface TmdbCombinedCredit {
@@ -36,6 +38,7 @@ interface TmdbCombinedCredit {
   vote_average?: number
   character?: string
   order?: number
+  genre_ids?: number[]
 }
 
 interface TmdbPerson {
@@ -51,6 +54,16 @@ interface TmdbPerson {
 
 interface TmdbCredits {
   cast?: Array<TmdbPerson & { character?: string }>
+}
+
+interface TmdbAggregateCastMember extends TmdbPerson {
+  roles?: Array<{ character?: string; episode_count?: number }>
+  order?: number
+  total_episode_count?: number
+}
+
+interface TmdbAggregateCredits {
+  cast?: TmdbAggregateCastMember[]
 }
 
 interface TmdbCombinedCredits {
@@ -71,6 +84,7 @@ const imageUrl = (path?: string | null, size = 'w500'): string | null =>
 const yearFromDate = (date?: string | null): string | null => date?.slice(0, 4) || null
 const MAX_ACTOR_CREDITS = 20
 const MIN_ACTOR_CREDITS_PER_MEDIA_TYPE = 5
+const TALK_TV_GENRE_ID = 10767
 
 const compareCreditsByPopularity = (a: TmdbCombinedCredit, b: TmdbCombinedCredit) =>
   (b.popularity ?? 0) - (a.popularity ?? 0)
@@ -122,6 +136,25 @@ const personDto = (person: TmdbPerson): CatalogEntity => ({
   ...(person.known_for_department ? { knownFor: person.known_for_department } : {}),
 })
 
+const aggregatePersonDto = (person: TmdbAggregateCastMember): CatalogEntity => ({
+  ...personDto(person),
+  character: person.roles
+    ?.map((role) => role.character?.trim())
+    .filter((character): character is string => Boolean(character))
+    .join(', ') || null,
+})
+
+const compareAggregateCast = (a: TmdbAggregateCastMember, b: TmdbAggregateCastMember) =>
+  (b.total_episode_count ?? 0) - (a.total_episode_count ?? 0)
+  || (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER)
+  || (b.popularity ?? 0) - (a.popularity ?? 0)
+
+const compareBillingOrder = (a: TmdbAggregateCastMember, b: TmdbAggregateCastMember) =>
+  (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER)
+  || compareAggregateCast(a, b)
+
+const TV_PUZZLE_MAIN_CAST_LIMIT = 10
+
 export class TmdbCatalog {
   constructor(private readonly tmdb: TmdbClient) {}
 
@@ -148,19 +181,28 @@ export class TmdbCatalog {
   }
 
   async getConnections(kind: EntityKind, id: string): Promise<CatalogEntity[]> {
-    if (kind === 'movie') {
-      const response = await this.tmdb.get<TmdbCredits>(`/movie/${id}/credits`)
-      return (response.cast ?? []).slice(0, 20).map(personDto)
-    }
-    if (kind === 'tv') {
-      const response = await this.tmdb.get<TmdbCredits>(`/tv/${id}/credits`)
-      return (response.cast ?? []).slice(0, 20).map(personDto)
-    }
+    if (kind !== 'actor') return this.getMediaCast(kind, id)
+    return this.getActorConnections(id)
+  }
 
+  async getPuzzleConnections(kind: EntityKind, id: string): Promise<CatalogEntity[]> {
+    if (kind === 'actor') return this.getActorConnections(id)
+    if (kind === 'tv') {
+      const cast = await this.getTvAggregateCast(id, false)
+      return [...cast]
+        .sort(compareBillingOrder)
+        .slice(0, TV_PUZZLE_MAIN_CAST_LIMIT)
+        .map(aggregatePersonDto)
+    }
+    return this.getMediaCast(kind, id)
+  }
+
+  private async getActorConnections(id: string): Promise<CatalogEntity[]> {
     const response = await this.tmdb.get<TmdbCombinedCredits>(`/person/${id}/combined_credits`)
     const unique = new Map<string, TmdbCombinedCredit>()
     for (const credit of response.cast ?? []) {
       if (credit.media_type !== 'movie' && credit.media_type !== 'tv') continue
+      if (credit.media_type === 'tv' && credit.genre_ids?.includes(TALK_TV_GENRE_ID)) continue
       const key = `${credit.media_type}:${credit.id}`
       const existing = unique.get(key)
       if (!existing) {
@@ -186,13 +228,88 @@ export class TmdbCatalog {
       if (selectedCredits.size >= MAX_ACTOR_CREDITS) break
       selectedCredits.set(`${credit.media_type}:${credit.id}`, credit)
     }
-    return [...selectedCredits.values()]
-      .sort(compareCreditsByPopularity)
-      .map(combinedCreditDto)
+    const candidates = [...selectedCredits.values()].sort(compareCreditsByPopularity)
+    const verifiedCandidates = await Promise.all(candidates.map(async (credit) => {
+      const cast = credit.media_type === 'tv'
+        ? (await this.getTvAggregateCast(String(credit.id), false)).map(aggregatePersonDto)
+        : await this.getMediaCast('movie', String(credit.id))
+      return cast.some((person) => person.id === id) ? credit : null
+    }))
+    return verifiedCandidates.flatMap((credit) => credit ? [combinedCreditDto(credit)] : [])
   }
 
   async getTrendingMovies(): Promise<CatalogEntity[]> {
     const response = await this.tmdb.get<TmdbTrendingResponse>('/trending/movie/week')
     return response.results.map(movieDto)
+  }
+
+  private async getMediaCast(kind: 'movie' | 'tv', id: string): Promise<CatalogEntity[]> {
+    if (kind === 'movie') {
+      const response = await this.tmdb.get<TmdbCredits>(`/movie/${id}/credits`)
+      return (response.cast ?? []).slice(0, MAX_ACTOR_CREDITS).map(personDto)
+    }
+
+    const cast = await this.getTvAggregateCast(id)
+    return cast.map(aggregatePersonDto)
+  }
+
+  private async getTvAggregateCast(
+    id: string,
+    includeSeasonCredits = true,
+  ): Promise<TmdbAggregateCastMember[]> {
+    const tv = await this.tmdb.get<TmdbTv>(`/tv/${id}`)
+    if (tv.genres?.some((genre) => genre.id === TALK_TV_GENRE_ID)) return []
+
+    const seasonNumbers = includeSeasonCredits
+      ? [...new Set((tv.seasons ?? [])
+        .filter(({ episode_count }) => episode_count !== 0)
+        .map(({ season_number }) => season_number))]
+      : []
+    const [seriesCredits, ...seasonCredits] = await Promise.all([
+      this.tmdb.get<TmdbAggregateCredits>(`/tv/${id}/aggregate_credits`),
+      ...seasonNumbers.map((season) =>
+        this.tmdb.get<TmdbAggregateCredits>(`/tv/${id}/season/${season}/aggregate_credits`),
+      ),
+    ])
+    const castById = new Map<number, TmdbAggregateCastMember>()
+    const episodeCountsById = new Map<number, number>()
+    for (const { cast } of seasonCredits) {
+      for (const person of cast ?? []) {
+        const episodeCount = person.total_episode_count
+          ?? person.roles?.reduce((total, role) => total + (role.episode_count ?? 0), 0)
+          ?? 0
+        episodeCountsById.set(person.id, (episodeCountsById.get(person.id) ?? 0) + episodeCount)
+      }
+    }
+
+    for (const person of [
+      ...(seriesCredits.cast ?? []),
+      ...seasonCredits.flatMap(({ cast }) => cast ?? []),
+    ]) {
+      const existing = castById.get(person.id)
+      if (!existing) {
+        castById.set(person.id, person)
+        continue
+      }
+
+      const preferred = (person.popularity ?? 0) > (existing.popularity ?? 0) ? person : existing
+      const orders = [existing.order, person.order].filter((order): order is number => order !== undefined)
+      const roles = new Map<string, { character: string }>()
+      for (const role of [...(existing.roles ?? []), ...(person.roles ?? [])]) {
+        const character = role.character?.trim()
+        if (character) roles.set(character, { character })
+      }
+      castById.set(person.id, {
+        ...preferred,
+        ...(orders.length > 0 ? { order: Math.min(...orders) } : {}),
+        roles: [...roles.values()],
+      })
+    }
+    return [...castById.values()]
+      .map((person) => ({
+        ...person,
+        total_episode_count: episodeCountsById.get(person.id) ?? person.total_episode_count,
+      }))
+      .sort(compareAggregateCast)
   }
 }

@@ -19,6 +19,7 @@ interface GraphData {
 }
 
 const entityKey = (entity: Pick<CatalogEntity, 'id' | 'kind'>) => `${entity.kind}:${entity.id}`
+const TV_CAST_PAGE_SIZE = 12
 const toGameEntity = (entity: CatalogEntity): GameEntity => ({
   id: entityKey(entity),
   kind: entity.kind,
@@ -148,6 +149,11 @@ export default function App() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const [filter, setFilter] = useState('')
+  const [tvCast, setTvCast] = useState<CatalogEntity[]>([])
+  const [tvCastLoading, setTvCastLoading] = useState(false)
+  const [tvCastError, setTvCastError] = useState('')
+  const [connectionPage, setConnectionPage] = useState(0)
+  const [tvCastRetry, setTvCastRetry] = useState(0)
   const [loadingPuzzle, setLoadingPuzzle] = useState(true)
   const [loadingConnections, setLoadingConnections] = useState(false)
   const [error, setError] = useState('')
@@ -219,6 +225,10 @@ export default function App() {
     setDeluxeHintError('')
     setDeluxeHintLoading(false)
     setCompletionDismissed(false)
+    setTvCast([])
+    setTvCastLoading(false)
+    setTvCastError('')
+    setConnectionPage(0)
     hintRequest.current++
     deluxeHintRequest.current++
     setFilter('')
@@ -262,9 +272,20 @@ export default function App() {
     const requestId = ++connectionRequest.current
     setLoadingConnections(true)
     setConnectionError('')
+    setConnectionPage(0)
+    if (current.kind === 'tv') {
+      setTvCast([])
+      setTvCastLoading(true)
+      setTvCastError('')
+    } else {
+      setTvCast([])
+      setTvCastLoading(false)
+      setTvCastError('')
+    }
     getConnections(current.kind, current.id)
       .then(({ entity: currentEntity, connections }) => {
         if (connectionRequest.current !== requestId) return
+        if (current.kind === 'tv') setTvCast(connections)
         setGraphData((previous) => {
           if (!previous) return previous
           const nodes = new Map(previous.nodes)
@@ -286,12 +307,17 @@ export default function App() {
       })
       .catch((requestError: unknown) => {
         if (connectionRequest.current !== requestId) return
-        setConnectionError(requestError instanceof Error ? requestError.message : 'Could not load connections.')
+        const message = requestError instanceof Error ? requestError.message : 'Could not load connections.'
+        setConnectionError(message)
+        if (current.kind === 'tv') setTvCastError(message)
       })
       .finally(() => {
-        if (connectionRequest.current === requestId) setLoadingConnections(false)
+        if (connectionRequest.current === requestId) {
+          setLoadingConnections(false)
+          if (current.kind === 'tv') setTvCastLoading(false)
+        }
       })
-  }, [current?.id, current?.kind])
+  }, [current?.id, current?.kind, tvCastRetry])
 
   useEffect(() => {
     if (!isComplete || !puzzle || completedPuzzleId.current === puzzle.id) return
@@ -310,8 +336,13 @@ export default function App() {
       .filter((entity): entity is CatalogEntity => Boolean(entity))
       .sort((a, b) => b.popularity - a.popularity)
     : []
-  const neighbors = connectedEntities.filter((entity) =>
+  const filteredConnections = (current?.kind === 'tv' ? tvCast : connectedEntities).filter((entity) =>
     entity.name.toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()),
+  )
+  const connectionPageCount = Math.ceil(filteredConnections.length / TV_CAST_PAGE_SIZE)
+  const visibleConnections = filteredConnections.slice(
+    connectionPage * TV_CAST_PAGE_SIZE,
+    (connectionPage + 1) * TV_CAST_PAGE_SIZE,
   )
 
   const chooseEntity = (entity: CatalogEntity) => {
@@ -703,18 +734,26 @@ export default function App() {
                     <h2>Which {current.kind === 'actor' ? 'movie or TV series' : 'actor'} would you like to choose?</h2>
                     <p>{current.kind === 'actor'
                       ? `Choose an acting credit from ${current.name}'s filmography.`
-                      : `Pick someone from ${current.name}'s cast.`}</p>
+                      : current.kind === 'tv'
+                        ? `Browse ${current.name}'s full cast, 12 actors at a time.`
+                        : `Pick someone from ${current.name}'s cast.`}</p>
                   </div>
                 </div>
                 <label className="search-field">
                   <Icon name="search" />
                   <input
                     value={filter}
-                    onChange={(event) => setFilter(event.target.value)}
-                    placeholder={`Search ${current.kind === 'actor' ? 'filmography' : 'cast'}…`}
-                    aria-label={`Search ${current.kind === 'actor' ? 'filmography' : 'cast'}`}
+                    onChange={(event) => {
+                      setFilter(event.target.value)
+                      setConnectionPage(0)
+                    }}
+                    placeholder={`Search ${current.kind === 'actor' ? 'filmography' : 'full cast'}…`}
+                    aria-label={`Search ${current.kind === 'actor' ? 'filmography' : 'full cast'}`}
                   />
-                  {filter && <button aria-label="Clear search" onClick={() => setFilter('')}>×</button>}
+                  {filter && <button aria-label="Clear search" onClick={() => {
+                    setFilter('')
+                    setConnectionPage(0)
+                  }}>×</button>}
                 </label>
               </div>
 
@@ -740,11 +779,16 @@ export default function App() {
 
               {connectionError && <p className="inline-error" role="status">{connectionError} Showing known connections.</p>}
               <div className="connection-grid">
-                {loadingConnections && neighbors.length === 0 ? (
+                {current.kind === 'tv' && tvCastError ? (
+                  <div className="cast-load-error" role="status">
+                    <p>{tvCastError}</p>
+                    <button className="hint-button" onClick={() => setTvCastRetry((retry) => retry + 1)}>Try again</button>
+                  </div>
+                ) : loadingConnections || tvCastLoading ? (
                   <div className="list-loading"><span className="spinner small" /> Loading connections…</div>
-                ) : neighbors.length === 0 ? (
+                ) : visibleConnections.length === 0 ? (
                   <div className="empty-list">{filter ? 'No matching connections.' : 'No connections available for this entity.'}</div>
-                ) : neighbors.map((entity) => (
+                ) : visibleConnections.map((entity) => (
                   <button
                     className="connection-card"
                     key={entityKey(entity)}
@@ -761,7 +805,35 @@ export default function App() {
                   </button>
                 ))}
               </div>
-              <div className="data-note"><span>ⓘ</span> Connections use available TMDB credits; some cast and filmography data may be incomplete.</div>
+              {!tvCastLoading && !loadingConnections && !(current.kind === 'tv' && tvCastError) && connectionPageCount > 1 && (
+                <div className="cast-pagination" aria-label={`${current.kind === 'actor' ? 'Filmography' : 'Cast'} pages`}>
+                  <span>
+                    Showing {connectionPage * TV_CAST_PAGE_SIZE + 1}–
+                    {Math.min((connectionPage + 1) * TV_CAST_PAGE_SIZE, filteredConnections.length)}
+                    {' '}of {filteredConnections.length} {current.kind === 'actor' ? 'credits' : 'cast members'}
+                  </span>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setConnectionPage((page) => Math.max(0, page - 1))}
+                      disabled={connectionPage === 0}
+                    >
+                      Previous
+                    </button>
+                    <span>Page {connectionPage + 1} of {connectionPageCount}</span>
+                    <button
+                      type="button"
+                      onClick={() => setConnectionPage((page) => Math.min(connectionPageCount - 1, page + 1))}
+                      disabled={connectionPage + 1 >= connectionPageCount}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="data-note"><span>ⓘ</span> {current.kind === 'tv'
+                ? "Search and pagination cover actors credited across the show's seasons; all listed cast members are playable."
+                : 'Connections use available TMDB credits; some cast and filmography data may be incomplete.'}</div>
             </section>
 
           </div>
