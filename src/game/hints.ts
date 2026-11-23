@@ -1,6 +1,6 @@
 export interface HintEntity {
   id: string
-  kind: 'movie' | 'actor'
+  kind: 'movie' | 'tv' | 'actor'
   popularity: number
 }
 
@@ -15,7 +15,7 @@ export function selectPuzzleHints<T extends HintEntity>(
 ): PuzzleHint<T>[] {
   const kind = target.kind === 'actor' ? 'popular-film' : 'top-billed-actor'
   const candidates = target.kind === 'actor'
-    ? connections.filter((entity) => entity.kind === 'movie').sort((a, b) => b.popularity - a.popularity)
+    ? connections.filter((entity) => entity.kind !== 'actor').sort((a, b) => b.popularity - a.popularity)
     : connections.filter((entity) => entity.kind === 'actor')
 
   return candidates.slice(0, 5).map((entity) => ({ kind, entity }))

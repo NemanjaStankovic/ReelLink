@@ -6,12 +6,12 @@ export function buildGraph(entities: GameEntity[], credits: Credit[]): GameGraph
 
   for (const entity of entities) neighbors.set(entity.id, new Set())
 
-  for (const { movieId, actorId } of credits) {
-    const movie = entityMap.get(movieId)
-    const actor = entityMap.get(actorId)
-    if (!movie || !actor || movie.kind !== 'movie' || actor.kind !== 'actor') continue
-    neighbors.get(movieId)!.add(actorId)
-    neighbors.get(actorId)!.add(movieId)
+  for (const { movieId, actorId, mediaKind = 'movie' } of credits) {
+    const movie = entityMap.get(`${mediaKind}:${movieId}`) ?? entityMap.get(movieId)
+    const actor = entityMap.get(actorId) ?? entityMap.get(`actor:${actorId}`)
+    if (!movie || !actor || (movie.kind !== 'movie' && movie.kind !== 'tv') || actor.kind !== 'actor') continue
+    neighbors.get(movie.id)!.add(actor.id)
+    neighbors.get(actor.id)!.add(movie.id)
   }
 
   return { entities: entityMap, neighbors }
@@ -73,6 +73,8 @@ export function isValidNextEntity(
   if (path.length === 0) return false
   const current = path[path.length - 1]
   const candidate = graph.entities.get(candidateId)
-  if (!candidate || candidate.kind === current.kind || path.some((entity) => entity.id === candidateId)) return false
+  if (!candidate
+    || (candidate.kind === 'actor') === (current.kind === 'actor')
+    || path.some((entity) => entity.id === candidateId)) return false
   return graph.neighbors.get(current.id)?.has(candidateId) ?? false
 }

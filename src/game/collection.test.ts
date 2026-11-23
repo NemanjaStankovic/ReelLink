@@ -69,6 +69,16 @@ describe('local player collection', () => {
     expect(recordCorrectGuess(storage, film, 'gold')[0].bestDifficulty).toBe('gold')
   })
 
+  it('stores grayscale completions and upgrades them when a colored tier is earned', () => {
+    const storage = createStorage()
+    const film = entity('movie', '1')
+    recordCorrectGuess(storage, film, 'unranked')
+    expect(readCollection(storage)[0].bestDifficulty).toBe('unranked')
+
+    const collection = recordCorrectGuess(storage, film, 'silver')
+    expect(collection[0]).toMatchObject({ correctGuesses: 2, bestDifficulty: 'silver' })
+  })
+
   it('resets malformed stored collection data', () => {
     const storage = createStorage()
     storage.setItem('reellink.collection.v1', '{malformed')

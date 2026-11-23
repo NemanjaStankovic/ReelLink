@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { buildGraph, findShortestDistances } from '../../src/game/graph.js'
 import { getDifficultyTier } from '../../src/game/difficulty.js'
 import type { DifficultyTier } from '../../src/game/difficulty.js'
-import type { Credit, EntityKind, GameEntity } from '../../src/game/model.js'
+import type { Credit, EntityKind, GameEntity, MediaKind } from '../../src/game/model.js'
 import type { CatalogEntity, Puzzle } from '../../src/api/types.js'
 
 interface PuzzleCatalog {
@@ -30,7 +30,10 @@ const shuffled = <T>(items: T[]): T[] => {
   return result
 }
 
+type MediaEntity = CatalogEntity & { kind: MediaKind }
+
 const entityKey = (entity: CatalogEntity): string => `${entity.kind}:${entity.id}`
+const isMediaEntity = (entity: CatalogEntity): entity is MediaEntity => entity.kind !== 'actor'
 
 const asGameEntity = (entity: CatalogEntity): GameEntity => ({
   id: entityKey(entity),
@@ -49,11 +52,7 @@ function findCandidatesByDifficulty(
   nodes: CatalogEntity[],
   credits: Credit[],
 ): Partial<Record<DifficultyTier, PuzzleCandidate>> {
-  const graphCredits = credits.map(({ movieId, actorId }) => ({
-    movieId: `movie:${movieId}`,
-    actorId: `actor:${actorId}`,
-  }))
-  const graph = buildGraph(nodes.map(asGameEntity), graphCredits)
+  const graph = buildGraph(nodes.map(asGameEntity), credits)
   const candidates: Partial<Record<DifficultyTier, PuzzleCandidate>> = {}
   const counts: Record<DifficultyTier, number> = { bronze: 0, silver: 0, gold: 0 }
 
@@ -99,30 +98,31 @@ export class PuzzleService {
     const entities = new Map<string, CatalogEntity>()
     const credits: Credit[] = []
     const creditKeys = new Set<string>()
-    const expandedMovieIds = new Set<string>()
+    const expandedMediaKeys = new Set<string>()
     const expandedActorIds = new Set<string>()
 
-    const addCredit = (movieId: string, actorId: string) => {
-      const key = `${movieId}:${actorId}`
+    const addCredit = (media: MediaEntity, actorId: string) => {
+      const key = `${media.kind}:${media.id}:${actorId}`
       if (creditKeys.has(key)) return
       creditKeys.add(key)
-      credits.push({ movieId, actorId })
+      credits.push({ movieId: media.id, actorId, mediaKind: media.kind })
     }
 
-    const expandMovies = async (movies: CatalogEntity[]): Promise<CatalogEntity[]> => {
-      const pending = movies.filter((movie) => !expandedMovieIds.has(movie.id))
-      pending.forEach((movie) => expandedMovieIds.add(movie.id))
-      const casts = await Promise.all(pending.map(async (movie) => ({
-        movie,
-        cast: await this.catalog.getConnections('movie', movie.id),
+    const expandMedia = async (mediaItems: CatalogEntity[]): Promise<CatalogEntity[]> => {
+      const pending = mediaItems.filter(isMediaEntity)
+        .filter((media) => !expandedMediaKeys.has(entityKey(media)))
+      pending.forEach((media) => expandedMediaKeys.add(entityKey(media)))
+      const casts = await Promise.all(pending.map(async (media) => ({
+        media,
+        cast: await this.catalog.getConnections(media.kind, media.id),
       })))
       const actors = new Map<string, CatalogEntity>()
-      for (const { movie, cast } of casts) {
-        entities.set(entityKey(movie), movie)
+      for (const { media, cast } of casts) {
+        entities.set(entityKey(media), media)
         for (const actor of cast) {
           entities.set(entityKey(actor), actor)
           actors.set(entityKey(actor), actor)
-          addCredit(movie.id, actor.id)
+          addCredit(media, actor.id)
         }
       }
       return [...actors.values()]
@@ -133,32 +133,33 @@ export class PuzzleService {
       pending.forEach((actor) => expandedActorIds.add(actor.id))
       const filmographies = await Promise.all(pending.map(async (actor) => ({
         actor,
-        movies: await this.catalog.getConnections('actor', actor.id),
+        credits: await this.catalog.getConnections('actor', actor.id),
       })))
-      const movies = new Map<string, CatalogEntity>()
-      for (const { actor, movies: filmography } of filmographies) {
+      const media = new Map<string, CatalogEntity>()
+      for (const { actor, credits: filmography } of filmographies) {
         entities.set(entityKey(actor), actor)
-        for (const movie of filmography) {
-          entities.set(entityKey(movie), movie)
-          movies.set(entityKey(movie), movie)
-          addCredit(movie.id, actor.id)
+        for (const credit of filmography) {
+          if (!isMediaEntity(credit)) continue
+          entities.set(entityKey(credit), credit)
+          media.set(entityKey(credit), credit)
+          addCredit(credit, actor.id)
         }
       }
-      return [...movies.values()]
+      return [...media.values()]
     }
 
-    const seedActors = await expandMovies(seedMovies)
+    const seedActors = await expandMedia(seedMovies)
     const seedActorsToExpand = shuffled(seedActors).slice(0, SEED_ACTOR_LIMIT)
-    let movieFrontier = await expandActors(seedActorsToExpand)
+    let mediaFrontier = await expandActors(seedActorsToExpand)
     let candidates = findCandidatesByDifficulty([...entities.values()], credits)
 
     for (let round = 0; round < MAX_EXPANSION_ROUNDS; round++) {
       if (requestedDifficulty !== 'gold' && candidates[requestedDifficulty]) break
-      const moviesToExpand = shuffled(movieFrontier.filter((movie) => !expandedMovieIds.has(movie.id)))
+      const mediaToExpand = shuffled(mediaFrontier.filter((media) => !expandedMediaKeys.has(entityKey(media))))
         .slice(0, EXPANSION_BATCH_LIMIT)
-      if (moviesToExpand.length === 0) break
+      if (mediaToExpand.length === 0) break
 
-      const discoveredActors = await expandMovies(moviesToExpand)
+      const discoveredActors = await expandMedia(mediaToExpand)
       candidates = findCandidatesByDifficulty([...entities.values()], credits)
       if ((requestedDifficulty !== 'gold' && candidates[requestedDifficulty])
         || round === MAX_EXPANSION_ROUNDS - 1) break
@@ -166,7 +167,7 @@ export class PuzzleService {
       const actorsToExpand = shuffled(discoveredActors.filter((actor) => !expandedActorIds.has(actor.id)))
         .slice(0, EXPANSION_BATCH_LIMIT)
       if (actorsToExpand.length === 0) break
-      movieFrontier = await expandActors(actorsToExpand)
+      mediaFrontier = await expandActors(actorsToExpand)
       candidates = findCandidatesByDifficulty([...entities.values()], credits)
       if (requestedDifficulty !== 'gold' && candidates[requestedDifficulty]) break
     }

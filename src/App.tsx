@@ -3,8 +3,8 @@ import type { ReactNode } from 'react'
 import { getConnections, getRandomPuzzle } from './api/client'
 import type { CatalogEntity, Puzzle } from './api/types'
 import { buildGraph, findShortestPath, isValidNextEntity } from './game/graph'
-import { getDifficultyTier } from './game/difficulty'
-import type { DifficultyTier } from './game/difficulty'
+import { getDifficultyTier, getEarnedCardQuality, getRewardStepLimit } from './game/difficulty'
+import type { CardQuality } from './game/difficulty'
 import type { Credit, GameEntity } from './game/model'
 import { selectPuzzleHint, selectPuzzleHints } from './game/hints'
 import type { PuzzleHint } from './game/hints'
@@ -27,7 +27,7 @@ const toGameEntity = (entity: CatalogEntity): GameEntity => ({
 
 const createGraphData = (nodes: CatalogEntity[], edges: Credit[]): GraphData => ({
   nodes: new Map(nodes.map((entity) => [entityKey(entity), entity])),
-  credits: new Map(edges.map((edge) => [`${edge.movieId}:${edge.actorId}`, edge])),
+  credits: new Map(edges.map((edge) => [`${edge.mediaKind ?? 'movie'}:${edge.movieId}:${edge.actorId}`, edge])),
 })
 
 const formatTime = (seconds: number) => {
@@ -36,7 +36,9 @@ const formatTime = (seconds: number) => {
   return `${minutes}:${remaining}`
 }
 
-const entityKindLabel = (kind: CatalogEntity['kind']) => kind === 'movie' ? 'Movie' : 'Actor'
+const entityKindLabel = (kind: CatalogEntity['kind']) =>
+  kind === 'movie' ? 'Movie' : kind === 'tv' ? 'TV Series' : 'Actor'
+const cardQualityLabel = (quality: CardQuality) => quality === 'unranked' ? 'B&W' : quality.toUpperCase()
 
 type IconName = 'dice' | 'collection' | 'timer' | 'steps' | 'trophy' | 'bulb' | 'search' | 'clapper' | 'arrow'
 
@@ -59,7 +61,7 @@ function EntityArtwork({ entity, className = '' }: { entity: CatalogEntity; clas
   return entity.imageUrl
     ? <img className={className} src={entity.imageUrl} alt="" loading="lazy" />
     : <span className={`${className} artwork-placeholder ${entity.kind}`} aria-hidden="true">
-      {entity.kind === 'movie'
+      {entity.kind !== 'actor'
         ? <Icon name="clapper" />
         : <svg className="actor-placeholder-icon" viewBox="0 0 64 80" fill="currentColor">
           <circle cx="32" cy="22" r="13" />
@@ -77,7 +79,7 @@ function EntityDetailsContent({
   connections: CatalogEntity[]
   loadingConnections: boolean
 }) {
-  const popularMovies = connections.filter((item) => item.kind === 'movie').slice(0, 5)
+  const popularCredits = connections.filter((item) => item.kind !== 'actor').slice(0, 5)
 
   return (
     <>
@@ -87,11 +89,13 @@ function EntityDetailsContent({
       <div className="details-copy">
         <div className="details-heading">
           <div>
-            <span className="details-kicker">{entity.kind === 'movie' ? 'NOW PLAYING' : 'IN THE SPOTLIGHT'}</span>
+            <span className="details-kicker">{entity.kind === 'actor' ? 'IN THE SPOTLIGHT' : 'NOW PLAYING'}</span>
             <h2>{entity.name}</h2>
-            {entity.year && <span className="details-year">{entity.kind === 'movie' ? 'Released' : 'Born'} {entity.year}</span>}
+            {entity.year && <span className="details-year">
+              {entity.kind === 'actor' ? 'Born' : entity.kind === 'tv' ? 'First aired' : 'Released'} {entity.year}
+            </span>}
           </div>
-          {entity.kind === 'movie' && (
+          {entity.kind !== 'actor' && (
             <div className="tmdb-score" aria-label="TMDB rating">
               <span>TMDB SCORE</span>
               <strong>{entity.rating && entity.rating > 0 ? entity.rating.toFixed(1) : '—'}<small>/10</small></strong>
@@ -99,23 +103,27 @@ function EntityDetailsContent({
           )}
         </div>
         <div className="details-description">
-          <h3>{entity.kind === 'movie' ? 'Movie overview' : 'Biography'}</h3>
-          <p>{entity.description.trim() || `No ${entity.kind === 'movie' ? 'overview' : 'biography'} is available from TMDB.`}</p>
+          <h3>{entity.kind === 'actor' ? 'Biography' : 'Overview'}</h3>
+          <p>{entity.description.trim() || `No ${entity.kind === 'actor' ? 'biography' : 'overview'} is available from TMDB.`}</p>
         </div>
         {entity.kind === 'actor' && (
           <div className="popular-films">
-            <h3>Popular movies</h3>
-            {popularMovies.length > 0 ? (
+            <h3>Popular acting credits</h3>
+            {popularCredits.length > 0 ? (
               <div className="popular-film-list">
-                {popularMovies.map((movie) => (
-                  <div className="popular-film" key={entityKey(movie)}>
-                    <EntityArtwork entity={movie} className="popular-film-art" />
-                    <span><strong>{movie.name}</strong><small>{movie.year ?? 'Release year unknown'}</small></span>
+                {popularCredits.map((credit) => (
+                  <div className="popular-film" key={entityKey(credit)}>
+                    <EntityArtwork entity={credit} className="popular-film-art" />
+                    <span>
+                      <strong>{credit.name}</strong>
+                      <small>{entityKindLabel(credit.kind)} · {credit.year ?? 'Year unknown'}</small>
+                      {credit.character && <small>as {credit.character}</small>}
+                    </span>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="no-popular-films">{loadingConnections ? 'Loading filmography…' : 'No movie credits are available.'}</p>
+              <p className="no-popular-films">{loadingConnections ? 'Loading filmography…' : 'No acting credits are available.'}</p>
             )}
           </div>
         )}
@@ -124,8 +132,8 @@ function EntityDetailsContent({
   )
 }
 
-type CollectionFilter = 'all' | 'movie' | 'actor'
-type CollectionTierFilter = 'all' | DifficultyTier
+type CollectionFilter = 'all' | 'movie' | 'tv' | 'actor'
+type CollectionTierFilter = 'all' | CardQuality
 
 interface CardDetailsTarget {
   entity: CatalogEntity
@@ -173,10 +181,7 @@ export default function App() {
   const gameGraph = useMemo(() => {
     if (!graphData) return null
     const nodes = [...graphData.nodes.values()].map(toGameEntity)
-    const edges = [...graphData.credits.values()].map(({ movieId, actorId }) => ({
-      movieId: `movie:${movieId}`,
-      actorId: `actor:${actorId}`,
-    }))
+    const edges = [...graphData.credits.values()]
     return buildGraph(nodes, edges)
   }, [graphData])
 
@@ -189,6 +194,7 @@ export default function App() {
     : null
   const shortestSteps = bestPath?.steps ?? puzzle?.shortestSteps ?? 0
   const puzzleDifficulty = puzzle ? getDifficultyTier(puzzle.shortestSteps) : null
+  const rewardStepLimit = puzzle ? getRewardStepLimit(puzzle.shortestSteps) : null
   const visibleCollection = useMemo(() => {
     const query = collectionSearch.trim().toLocaleLowerCase()
     return collection
@@ -224,7 +230,7 @@ export default function App() {
       setPuzzle(next)
       setGraphData(createGraphData(
         next.graph.nodes,
-        next.graph.edges.map(({ movieId, actorId }) => ({ movieId, actorId })),
+        next.graph.edges.map(({ movieId, actorId, mediaKind }) => ({ movieId, actorId, mediaKind })),
       ))
       setPath([next.start])
       setStartedAt(Date.now())
@@ -266,10 +272,11 @@ export default function App() {
           nodes.set(entityKey(currentEntity), currentEntity)
           for (const connection of connections) {
             nodes.set(entityKey(connection), connection)
-            const credit: Credit = current.kind === 'movie'
-              ? { movieId: current.id, actorId: connection.id }
-              : { movieId: connection.id, actorId: current.id }
-            credits.set(`${credit.movieId}:${credit.actorId}`, credit)
+            const media = current.kind === 'actor' ? connection : current
+            const actor = current.kind === 'actor' ? current : connection
+            if (media.kind === 'actor' || actor.kind !== 'actor') continue
+            const credit: Credit = { mediaKind: media.kind, movieId: media.id, actorId: actor.id }
+            credits.set(`${credit.mediaKind}:${credit.movieId}:${credit.actorId}`, credit)
           }
           return { nodes, credits }
         })
@@ -313,12 +320,13 @@ export default function App() {
     setPath((previous) => [...previous, entity])
     setFilter('')
     if (!puzzle || entityKey(entity) !== entityKey(puzzle.target)) return
-    if (!puzzleDifficulty) {
+    const earnedQuality = getEarnedCardQuality(puzzle.shortestSteps, path.length)
+    if (!earnedQuality) {
       setCollectionError('Could not save your collection: this puzzle has no supported difficulty tier.')
       return
     }
     try {
-      setCollection(recordCorrectGuess(window.localStorage, entity, puzzleDifficulty))
+      setCollection(recordCorrectGuess(window.localStorage, entity, earnedQuality))
       setCollectionError('')
     } catch (requestError) {
       setCollectionError(requestError instanceof Error
@@ -463,7 +471,7 @@ export default function App() {
               <div>
                 <p className="collection-kicker">YOUR REELLINK COLLECTION</p>
                 <h1>Every connection counts.</h1>
-                <p>Movies and actors you’ve correctly connected in your puzzles.</p>
+                <p>Movies, TV series, and actors you’ve correctly connected in your puzzles.</p>
               </div>
               <div className="collection-total">
                 <strong>{collection.length}</strong>
@@ -477,6 +485,7 @@ export default function App() {
                   {([
                     ['all', 'All', collection.length],
                     ['movie', 'Movies', collection.filter((card) => card.entity.kind === 'movie').length],
+                    ['tv', 'TV Series', collection.filter((card) => card.entity.kind === 'tv').length],
                     ['actor', 'Actors', collection.filter((card) => card.entity.kind === 'actor').length],
                   ] as const).map(([kind, label, count]) => (
                     <button
@@ -495,6 +504,7 @@ export default function App() {
                     ['bronze', 'Bronze', collection.filter((card) => card.bestDifficulty === 'bronze').length],
                     ['silver', 'Silver', collection.filter((card) => card.bestDifficulty === 'silver').length],
                     ['gold', 'Gold', collection.filter((card) => card.bestDifficulty === 'gold').length],
+                    ['unranked', 'B&W', collection.filter((card) => card.bestDifficulty === 'unranked').length],
                   ] as const).map(([tier, label, count]) => (
                     <button
                       key={tier}
@@ -523,7 +533,7 @@ export default function App() {
               <div className="collection-empty">
                 <Icon name="collection" />
                 <h2>Your collection is waiting.</h2>
-                <p>Every actor or movie you correctly connect will be saved here.</p>
+                <p>Every actor, movie, or TV series you correctly connect will be saved here.</p>
                 <button className="button button-gold" onClick={() => void startPuzzle()}>Start a puzzle</button>
               </div>
             ) : visibleCollection.length === 0 ? (
@@ -538,13 +548,13 @@ export default function App() {
                     className={`collection-card difficulty-${card.bestDifficulty}`}
                     key={entityKey(card.entity)}
                     onClick={() => void openCollectedCard(card)}
-                    aria-label={`${card.entity.name}, ${card.correctGuesses} correct ${card.correctGuesses === 1 ? 'guess' : 'guesses'}, best tier ${card.bestDifficulty}`}
+                    aria-label={`${card.entity.name}, ${card.correctGuesses} correct ${card.correctGuesses === 1 ? 'guess' : 'guesses'}, best quality ${cardQualityLabel(card.bestDifficulty)}`}
                   >
                     <EntityArtwork entity={card.entity} className="collection-card-artwork" />
                     <span className="collection-card-shade" />
                     <span className="collection-card-kind">{entityKindLabel(card.entity.kind)}</span>
                     <span className={`collection-tier-badge difficulty-${card.bestDifficulty}`}>
-                      {card.bestDifficulty.toUpperCase()}
+                      {cardQualityLabel(card.bestDifficulty)}
                     </span>
                     <span className="collection-card-title">{card.entity.name}</span>
                     <span className="collection-guess-count" title={`${card.correctGuesses} correct ${card.correctGuesses === 1 ? 'guess' : 'guesses'}`}>
@@ -627,8 +637,12 @@ export default function App() {
               </section>
               <section className="score-card steps-card">
                 <div className="score-heading"><Icon name="steps" /><span>Steps</span></div>
-                <strong className="steps-value">{path.length - 1}<span> / ∞</span></strong>
-                <small>Fewer steps is better</small>
+                <strong className="steps-value">{path.length - 1}<span> / {rewardStepLimit ?? '—'}</span></strong>
+                <small className="steps-reward-note">
+                  {puzzleDifficulty && rewardStepLimit !== null
+                    ? <>Finish in {rewardStepLimit} steps or fewer for a <b className={`difficulty-${puzzleDifficulty}`}>{puzzleDifficulty.toUpperCase()}</b> card; otherwise, B&amp;W.</>
+                    : 'This puzzle has no card tier.'}
+                </small>
               </section>
               <section className="score-card best-card" id="scores">
                 <div className="score-heading"><Icon name="trophy" /><span>Best score</span></div>
@@ -660,7 +674,7 @@ export default function App() {
                 )}
                 {hint && (
                   <div className="hint-result" role="status">
-                    <small>{hint.kind === 'popular-film' ? 'POPULAR FILM' : 'TOP-BILLED ACTOR'}</small>
+                    <small>{hint.kind === 'popular-film' ? 'POPULAR CREDIT' : 'TOP-BILLED ACTOR'}</small>
                     <div className="hint-entity">
                       <EntityArtwork entity={hint.entity} className="hint-artwork" />
                       <span>
@@ -686,10 +700,10 @@ export default function App() {
                 <div className="cast-title">
                   <Icon name="clapper" />
                   <div>
-                    <h2>Which {current.kind === 'movie' ? 'actor' : 'movie'} would you like to choose?</h2>
-                    <p>{current.kind === 'movie'
-                      ? `Pick someone from ${current.name}'s cast.`
-                      : `Choose a film from ${current.name}'s filmography.`}</p>
+                    <h2>Which {current.kind === 'actor' ? 'movie or TV series' : 'actor'} would you like to choose?</h2>
+                    <p>{current.kind === 'actor'
+                      ? `Choose an acting credit from ${current.name}'s filmography.`
+                      : `Pick someone from ${current.name}'s cast.`}</p>
                   </div>
                 </div>
                 <label className="search-field">
@@ -697,8 +711,8 @@ export default function App() {
                   <input
                     value={filter}
                     onChange={(event) => setFilter(event.target.value)}
-                    placeholder={`Search ${current.kind === 'movie' ? 'cast' : 'films'}…`}
-                    aria-label={`Search ${current.kind === 'movie' ? 'cast' : 'filmography'}`}
+                    placeholder={`Search ${current.kind === 'actor' ? 'filmography' : 'cast'}…`}
+                    aria-label={`Search ${current.kind === 'actor' ? 'filmography' : 'cast'}`}
                   />
                   {filter && <button aria-label="Clear search" onClick={() => setFilter('')}>×</button>}
                 </label>
@@ -741,6 +755,7 @@ export default function App() {
                     <span className="connection-caption">
                       <strong>{entity.name}</strong>
                       <small>{entityKindLabel(entity.kind)}{entity.year ? ` · ${entity.year}` : ''}</small>
+                      {entity.character && <small className="connection-character">as {entity.character}</small>}
                     </span>
                     <span className="connection-card-arrow" aria-hidden="true">↗</span>
                   </button>
@@ -803,11 +818,11 @@ export default function App() {
               <div>
                 <p className="deluxe-hint-eyebrow">DELUXE HINT</p>
                 <h2 id="deluxe-hint-title">
-                  {puzzle.target.kind === 'actor' ? 'Popular movies' : 'Top-billed actors'}
+                  {puzzle.target.kind === 'actor' ? 'Popular acting credits' : 'Top-billed actors'}
                 </h2>
                 <p>
                   {puzzle.target.kind === 'actor'
-                    ? `Explore popular movies featuring ${puzzle.target.name}.`
+                    ? `Explore popular movies and TV series featuring ${puzzle.target.name}.`
                     : `Explore the first-billed cast of ${puzzle.target.name}.`}
                 </p>
               </div>

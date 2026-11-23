@@ -73,3 +73,20 @@ describe('isValidNextEntity', () => {
     expect(isValidNextEntity(graph, [entities[0], entities[1]], 'm1')).toBe(false)
   })
 })
+
+describe('TV credits', () => {
+  it('connects TV series to actors without colliding with movie IDs', () => {
+    const mediaGraph = buildGraph(
+      [
+        { id: 'tv:1', kind: 'tv', name: 'Series' },
+        { id: 'movie:1', kind: 'movie', name: 'Film' },
+        { id: 'actor:1', kind: 'actor', name: 'Actor' },
+      ],
+      [{ movieId: '1', actorId: '1', mediaKind: 'tv' }],
+    )
+
+    expect(mediaGraph.neighbors.get('tv:1')).toEqual(new Set(['actor:1']))
+    expect(mediaGraph.neighbors.get('movie:1')).toEqual(new Set())
+    expect(isValidNextEntity(mediaGraph, [{ id: 'tv:1', kind: 'tv', name: 'Series' }], 'actor:1')).toBe(true)
+  })
+})

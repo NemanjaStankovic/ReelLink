@@ -1,6 +1,6 @@
 import type { CatalogEntity } from '../api/types.js'
 import { getHigherDifficulty } from './difficulty.js'
-import type { DifficultyTier } from './difficulty.js'
+import type { CardQuality } from './difficulty.js'
 
 const STORAGE_KEY = 'reellink.collection.v1'
 
@@ -9,7 +9,7 @@ export interface CollectedCard {
   correctGuesses: number
   firstGuessedAt: string
   lastGuessedAt: string
-  bestDifficulty: DifficultyTier
+  bestDifficulty: CardQuality
 }
 
 export function readCollection(storage: Storage = window.localStorage): CollectedCard[] {
@@ -33,7 +33,7 @@ export function readCollection(storage: Storage = window.localStorage): Collecte
 export function recordCorrectGuess(
   storage: Storage,
   entity: CatalogEntity,
-  difficulty: DifficultyTier,
+  difficulty: CardQuality,
   guessedAt = new Date().toISOString(),
 ): CollectedCard[] {
   const collection = readCollection(storage)
@@ -65,7 +65,7 @@ export function recordCorrectGuess(
   return updated
 }
 
-type StoredCollectedCard = Omit<CollectedCard, 'bestDifficulty'> & { bestDifficulty?: DifficultyTier }
+type StoredCollectedCard = Omit<CollectedCard, 'bestDifficulty'> & { bestDifficulty?: CardQuality }
 
 function isStoredCollectedCard(value: unknown): value is StoredCollectedCard {
   if (typeof value !== 'object' || value === null) return false
@@ -78,14 +78,15 @@ function isStoredCollectedCard(value: unknown): value is StoredCollectedCard {
     && (card.bestDifficulty === undefined
       || card.bestDifficulty === 'bronze'
       || card.bestDifficulty === 'silver'
-      || card.bestDifficulty === 'gold')
+      || card.bestDifficulty === 'gold'
+      || card.bestDifficulty === 'unranked')
 }
 
 function isCatalogEntity(value: unknown): value is CatalogEntity {
   if (typeof value !== 'object' || value === null) return false
   const entity = value as Partial<CatalogEntity>
   return typeof entity.id === 'string'
-    && (entity.kind === 'movie' || entity.kind === 'actor')
+    && (entity.kind === 'movie' || entity.kind === 'tv' || entity.kind === 'actor')
     && typeof entity.name === 'string'
     && (entity.year === null || typeof entity.year === 'string')
     && (entity.imageUrl === null || typeof entity.imageUrl === 'string')
@@ -93,4 +94,5 @@ function isCatalogEntity(value: unknown): value is CatalogEntity {
     && typeof entity.popularity === 'number'
     && (entity.rating === undefined || entity.rating === null || typeof entity.rating === 'number')
     && (entity.knownFor === undefined || typeof entity.knownFor === 'string')
+    && (entity.character === undefined || entity.character === null || typeof entity.character === 'string')
 }

@@ -7,6 +7,9 @@ import { PuzzleService } from './puzzleService.js'
 const movie = (id: string, name: string): CatalogEntity => ({
   id, kind: 'movie', name, year: null, imageUrl: null, description: '', popularity: 1,
 })
+const tv = (id: string, name: string): CatalogEntity => ({
+  id, kind: 'tv', name, year: null, imageUrl: null, description: '', popularity: 1,
+})
 const actor = (id: string, name: string): CatalogEntity => ({
   id, kind: 'actor', name, year: null, imageUrl: null, description: '', popularity: 1,
 })
@@ -40,10 +43,7 @@ describe('PuzzleService', () => {
     }))
     const graph = buildGraph(
       entities,
-      puzzle.graph.edges.map(({ movieId, actorId }) => ({
-        movieId: `movie:${movieId}`,
-        actorId: `actor:${actorId}`,
-      })),
+      puzzle.graph.edges,
     )
     const shortest = findShortestPath(
       graph,
@@ -58,15 +58,18 @@ describe('PuzzleService', () => {
   })
 
   it('expands credits enough to support a nine-transition route for Gold puzzles', async () => {
-    const movies = Array.from({ length: 5 }, (_, index) => movie(`${index}`, `Film ${index}`))
+    const movies = Array.from({ length: 3 }, (_, index) => movie(`${index}`, `Film ${index}`))
+    const series = Array.from({ length: 2 }, (_, index) => tv(`${index}`, `Series ${index}`))
     const actors = Array.from({ length: 5 }, (_, index) => actor(`${index}`, `Actor ${index}`))
+    const getConnections = vi.fn(async (kind: CatalogEntity['kind'], id: string) => {
+      if (kind === 'movie') return actors[Number(id) * 2] ? [actors[Number(id) * 2]] : []
+      if (kind === 'tv') return actors[Number(id) * 2 + 1] ? [actors[Number(id) * 2 + 1]] : []
+      const mediaByActor = [series[0], movies[1], series[1], movies[2]]
+      return mediaByActor[Number(id)] ? [mediaByActor[Number(id)]] : []
+    })
     const service = new PuzzleService({
       getTrendingMovies: async () => [movies[0]],
-      getConnections: async (kind, id) => {
-        const index = Number(id)
-        if (kind === 'movie') return actors[index] ? [actors[index]] : []
-        return movies[index + 1] ? [movies[index + 1]] : []
-      },
+      getConnections,
     })
     const random = vi.spyOn(Math, 'random').mockImplementationOnce(() => 0.95).mockReturnValue(0)
 
@@ -78,13 +81,12 @@ describe('PuzzleService', () => {
           kind: entity.kind,
           name: entity.name,
         })),
-        puzzle.graph.edges.map(({ movieId, actorId }) => ({
-          movieId: `movie:${movieId}`,
-          actorId: `actor:${actorId}`,
-        })),
+        puzzle.graph.edges,
       )
 
       expect(findShortestDistances(graph, 'movie:0').get('actor:4')).toBe(9)
+      expect(getConnections.mock.calls.some(([kind]) => kind === 'tv')).toBe(true)
+      expect(puzzle.graph.edges.some(({ mediaKind }) => mediaKind === 'tv')).toBe(true)
       expect(puzzle.shortestSteps).toBeGreaterThanOrEqual(7)
       expect(puzzle.shortestSteps).toBeLessThanOrEqual(9)
     } finally {

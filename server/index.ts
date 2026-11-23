@@ -10,7 +10,7 @@ const app = express()
 const port = Number(process.env.PORT ?? 3001)
 const catalog = new TmdbCatalog(new TmdbClient())
 const puzzles = new PuzzleService(catalog)
-const entityKinds: EntityKind[] = ['movie', 'actor']
+const entityKinds: EntityKind[] = ['movie', 'tv', 'actor']
 
 app.disable('x-powered-by')
 app.use(express.json({ limit: '16kb' }))

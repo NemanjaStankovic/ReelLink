@@ -10,6 +10,7 @@ export interface CatalogEntity {
   popularity: number
   rating?: number | null
   knownFor?: string
+  character?: string | null
 }
 
 export interface Puzzle {
@@ -23,6 +24,6 @@ export interface Puzzle {
   shortestSteps: number
   graph: {
     nodes: CatalogEntity[]
-    edges: Array<{ movieId: string; actorId: string }>
+    edges: Array<{ movieId: string; actorId: string; mediaKind?: 'movie' | 'tv' }>
   }
 }
