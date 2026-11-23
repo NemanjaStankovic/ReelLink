@@ -38,6 +38,7 @@ describe('puzzle difficulty tiers', () => {
 
   it('awards the puzzle tier within its step allowance and grayscale beyond it', () => {
     expect(getEarnedCardQuality(2, 2)).toBe('bronze')
+    expect(getEarnedCardQuality(3, 5)).toBe('unranked')
     expect(getEarnedCardQuality(4, 8)).toBe('silver')
     expect(getEarnedCardQuality(4, 9)).toBe('unranked')
     expect(getEarnedCardQuality(7, 13)).toBe('gold')

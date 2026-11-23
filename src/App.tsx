@@ -193,8 +193,8 @@ export default function App() {
     ? findShortestPath(gameGraph, entityKey(puzzle.start), entityKey(puzzle.target))
     : null
   const shortestSteps = bestPath?.steps ?? puzzle?.shortestSteps ?? 0
-  const puzzleDifficulty = puzzle ? getDifficultyTier(puzzle.shortestSteps) : null
-  const rewardStepLimit = puzzle ? getRewardStepLimit(puzzle.shortestSteps) : null
+  const puzzleDifficulty = puzzle ? getDifficultyTier(shortestSteps) : null
+  const rewardStepLimit = puzzle ? getRewardStepLimit(shortestSteps) : null
   const visibleCollection = useMemo(() => {
     const query = collectionSearch.trim().toLocaleLowerCase()
     return collection
@@ -320,7 +320,7 @@ export default function App() {
     setPath((previous) => [...previous, entity])
     setFilter('')
     if (!puzzle || entityKey(entity) !== entityKey(puzzle.target)) return
-    const earnedQuality = getEarnedCardQuality(puzzle.shortestSteps, path.length)
+    const earnedQuality = getEarnedCardQuality(shortestSteps, path.length)
     if (!earnedQuality) {
       setCollectionError('Could not save your collection: this puzzle has no supported difficulty tier.')
       return
