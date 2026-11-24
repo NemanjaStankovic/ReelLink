@@ -1,7 +1,10 @@
 import 'dotenv/config'
 import express from 'express'
 import { resolve } from 'node:path'
+import { Pool } from 'pg'
 import type { EntityKind } from '../src/game/model.js'
+import { registerGoogleAuthRoutes } from './auth/googleAuth.js'
+import { AccountStore } from './data/accountStore.js'
 import { TmdbCatalog } from './data/tmdbCatalog.js'
 import { TmdbClient, TmdbError } from './data/tmdbClient.js'
 import { PuzzleService } from './services/puzzleService.js'
@@ -10,13 +13,27 @@ const app = express()
 const port = Number(process.env.PORT ?? 3001)
 const catalog = new TmdbCatalog(new TmdbClient())
 const puzzles = new PuzzleService(catalog)
+const accountPool = process.env.DATABASE_URL
+  ? new Pool({ connectionString: process.env.DATABASE_URL, max: 5 })
+  : null
+const accountStore = accountPool ? new AccountStore(accountPool) : null
 const entityKinds: EntityKind[] = ['movie', 'tv', 'actor']
 
 app.disable('x-powered-by')
-app.use(express.json({ limit: '16kb' }))
+app.use(express.json({ limit: '1mb' }))
+registerGoogleAuthRoutes(app, accountStore)
 
 app.get('/api/health', (_request, response) => {
-  response.json({ status: 'ok', tmdbConfigured: Boolean(process.env.TMDB_API_KEY) })
+  response.json({
+    status: 'ok',
+    tmdbConfigured: Boolean(process.env.TMDB_API_KEY),
+    accountConfigured: Boolean(
+      accountStore
+      && process.env.GOOGLE_CLIENT_ID
+      && process.env.GOOGLE_CLIENT_SECRET
+      && (process.env.AUTH_SESSION_SECRET?.length ?? 0) >= 32,
+    ),
+  })
 })
 
 app.get('/api/search', async (request, response, next) => {
@@ -93,6 +110,8 @@ app.use((error: unknown, _request: express.Request, response: express.Response, 
   console.error('Unhandled API error:', error)
   response.status(500).json({ error: 'An unexpected server error occurred.' })
 })
+
+if (accountStore) await accountStore.initialize()
 
 app.listen(port, () => {
   console.log(`ReelLink API listening on http://localhost:${port}`)

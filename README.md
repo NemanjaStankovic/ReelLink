@@ -5,9 +5,22 @@ ReelLink is a responsive movie-and-actor connection game. Each valid actor/movie
 ## Run locally
 
 1. Install Node.js 22 or later.
-2. Copy `.env.example` to `.env` and set `TMDB_API_KEY` to your TMDB API key. The key is used only by the server.
+2. Copy `.env.example` to `.env` and set `TMDB_API_KEY` to your TMDB API key. The key is used only by the server. Google sign-in also requires the optional OAuth and database variables below.
 3. Run `npm install`, then `npm run dev`.
 4. Open the Vite URL printed in the terminal (normally `http://localhost:5173`).
+
+### Google account sync
+
+Google sign-in stores player statistics and the collected-card list in PostgreSQL under the Google account. Anonymous play continues to use browser `localStorage`; on sign-in, local and account data are merged without double-counting identical snapshots, and subsequent changes are synced to the server. In-progress guesses are not stored.
+
+For local development, set `DATABASE_URL`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and a random `AUTH_SESSION_SECRET` of at least 32 characters in `.env`. The default Google callback is `http://localhost:3001/auth/google/callback` and the frontend origin is `http://localhost:5173`.
+
+For Render, create a PostgreSQL database and set `DATABASE_URL` on the ReelLink web service to the database's internal connection URL. Set the Google credentials and a strong session secret as service environment variables, plus:
+
+- `GOOGLE_CALLBACK_URL=https://reellink.onrender.com/auth/google/callback`
+- `FRONTEND_URL=https://reellink.onrender.com`
+
+In the Google OAuth client, allow `https://reellink.onrender.com` as an authorized JavaScript origin and add the callback URL above as an authorized redirect URI. Keep the client secret and session secret only in the server's environment variables; never expose or commit them.
 
 `npm test` runs the graph, game-rule, and local-statistics tests. `npm run build` type-checks both app and server and creates the production frontend and server builds. Run the server build with `npm start`.
 
@@ -33,4 +46,4 @@ Movie, TV series, and actor details are hidden during play. After completing a p
 
 Successful TMDB responses are cached in memory for one hour, duplicate in-flight requests are coalesced, outbound concurrency is limited to three requests, and requests time out after 10 seconds. HTTP 429 responses are returned with their `Retry-After` header when TMDB provides one. The cache is process-local and is not shared across instances.
 
-Personal statistics and destination cards are stored in the current browser's `localStorage`; intermediate path guesses are not collected. A card keeps the puzzle's difficulty color when completed within its reward limit: Bronze requires the shortest known path, Silver allows four extra steps, and Gold allows six. Completing beyond that limit earns a grayscale card, which can later upgrade to a colored tier; a card never downgrades. The Steps panel shows the exact limit and tier for the active puzzle. Repeated destination completions increment the card's count. Existing cards without a recorded tier are treated as Bronze. Selecting a collection card loads its TMDB overview, or biography and popular mixed movie/TV acting credits. No account or server-side player record is created. This product uses the TMDB API but is not endorsed or certified by TMDB.
+Intermediate path guesses are not collected. A card keeps the puzzle's difficulty color when completed within its reward limit: Bronze requires the shortest known path, Silver allows four extra steps, and Gold allows six. Completing beyond that limit earns a grayscale card, which can later upgrade to a colored tier; a card never downgrades. The Steps panel shows the exact limit and tier for the active puzzle. Repeated destination completions increment the card's count. Existing cards without a recorded tier are treated as Bronze. Selecting a collection card loads its TMDB overview, or biography and popular mixed movie/TV acting credits. This product uses the TMDB API but is not endorsed or certified by TMDB.

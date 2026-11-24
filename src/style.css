@@ -44,7 +44,9 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .nav-button.active { border-color: rgba(123,135,222,.27); color: #fff; background: linear-gradient(130deg, rgba(61,74,145,.48), rgba(50,47,105,.55)); box-shadow: 0 4px 18px rgba(19,22,57,.25); }
 .nav-button.active .icon { color: var(--gold); }
 .nav-button:disabled { opacity: .5; cursor: wait; }
+.account-nav-button { white-space: nowrap; }
 .game-page { width: min(1190px, calc(100% - 60px)); margin: 17px auto 0; }
+.account-status { margin: 0 0 12px; color: #edacb1; font-size: 10px; }
 .collection-storage-error { margin: 0 0 12px; color: #edacb1; font-size: 10px; }
 .collection-page { min-height: 580px; padding: 25px; border: 1px solid var(--border); border-radius: 17px; background: linear-gradient(115deg, rgba(24,27,51,.96), rgba(21,24,47,.96)); box-shadow: 0 16px 40px rgba(4,6,22,.16); backdrop-filter: blur(9px); }
 .collection-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 24px; }

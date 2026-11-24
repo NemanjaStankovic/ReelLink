@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { getAccountState, getAuthStatus, logoutAccount, saveAccountState } from './api/account'
+import type { AccountUser } from './api/account'
 import { getConnections, getRandomPuzzle } from './api/client'
 import type { CatalogEntity, Puzzle } from './api/types'
 import { buildGraph, findShortestPath, isValidNextEntity } from './game/graph'
@@ -8,9 +10,11 @@ import type { CardQuality } from './game/difficulty'
 import type { Credit, GameEntity } from './game/model'
 import { selectPuzzleHint, selectPuzzleHints } from './game/hints'
 import type { PuzzleHint } from './game/hints'
-import { readPlayerStats, recordGameResult } from './game/stats'
+import { mergeAccountState } from './game/accountState'
+import type { AccountState } from './game/accountState'
+import { readPlayerStats, recordGameResult, savePlayerStats } from './game/stats'
 import type { PlayerStats } from './game/stats'
-import { readCollection, recordCorrectGuess } from './game/collection'
+import { readCollection, recordCorrectGuess, saveCollection } from './game/collection'
 import type { CollectedCard } from './game/collection'
 
 interface GraphData {
@@ -168,6 +172,11 @@ export default function App() {
   const [completionDismissed, setCompletionDismissed] = useState(false)
   const [playerStats, setPlayerStats] = useState<PlayerStats>(() => readPlayerStats())
   const [collection, setCollection] = useState<CollectedCard[]>(() => readCollection())
+  const [accountUser, setAccountUser] = useState<AccountUser | null>(null)
+  const [accountConfigured, setAccountConfigured] = useState(false)
+  const [accountLoading, setAccountLoading] = useState(true)
+  const [accountReady, setAccountReady] = useState(false)
+  const [accountError, setAccountError] = useState('')
   const [collectionFilter, setCollectionFilter] = useState<CollectionFilter>('all')
   const [collectionTierFilter, setCollectionTierFilter] = useState<CollectionTierFilter>('all')
   const [collectionSearch, setCollectionSearch] = useState('')
@@ -183,6 +192,30 @@ export default function App() {
   const selectedCardRequest = useRef(0)
   const completedPuzzleId = useRef<string | null>(null)
   const initialLoadStarted = useRef(false)
+  const accountSyncQueue = useRef<Promise<void>>(Promise.resolve())
+
+  const syncAccountState = useCallback((state: AccountState) => {
+    if (!accountUser || !accountReady) return
+    const sync = accountSyncQueue.current.then(async () => {
+      const local = { stats: readPlayerStats(), collection: readCollection() }
+      const saved = await saveAccountState(mergeAccountState(state, local))
+      const latest = mergeAccountState(saved, {
+        stats: readPlayerStats(),
+        collection: readCollection(),
+      })
+      savePlayerStats(window.localStorage, latest.stats)
+      saveCollection(window.localStorage, latest.collection)
+      setPlayerStats(latest.stats)
+      setCollection(latest.collection)
+      setAccountError('')
+    })
+    accountSyncQueue.current = sync.then(() => undefined, () => undefined)
+    void sync.catch((requestError: unknown) => {
+      setAccountError(requestError instanceof Error
+        ? `Could not sync your account: ${requestError.message}`
+        : 'Could not sync your account.')
+    })
+  }, [accountReady, accountUser])
 
   const gameGraph = useMemo(() => {
     if (!graphData) return null
@@ -260,6 +293,43 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
+    const loadAccount = async () => {
+      try {
+        const status = await getAuthStatus()
+        if (cancelled) return
+        setAccountConfigured(status.configured)
+        setAccountUser(status.user)
+        if (!status.user) return
+
+        const accountState = await getAccountState()
+        if (cancelled) return
+        const state = await saveAccountState(mergeAccountState({
+          stats: readPlayerStats(),
+          collection: readCollection(),
+        }, accountState))
+        if (cancelled) return
+
+        savePlayerStats(window.localStorage, state.stats)
+        saveCollection(window.localStorage, state.collection)
+        setPlayerStats(state.stats)
+        setCollection(state.collection)
+        setAccountReady(true)
+      } catch (requestError) {
+        if (cancelled) return
+        setAccountError(requestError instanceof Error
+          ? `Could not load your account: ${requestError.message}`
+          : 'Could not load your account.')
+      } finally {
+        if (!cancelled) setAccountLoading(false)
+      }
+    }
+
+    void loadAccount()
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
     if (startedAt === null || isComplete) return
     const updateTime = () => setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000))
     updateTime()
@@ -322,13 +392,15 @@ export default function App() {
   useEffect(() => {
     if (!isComplete || !puzzle || completedPuzzleId.current === puzzle.id) return
     completedPuzzleId.current = puzzle.id
-    setPlayerStats(recordGameResult(window.localStorage, {
+    const updatedStats = recordGameResult(window.localStorage, {
       steps: path.length - 1,
       shortestSteps,
       seconds: elapsedSeconds,
       completedAt: new Date().toISOString(),
-    }))
-  }, [isComplete, puzzle, path.length, shortestSteps, elapsedSeconds])
+    })
+    setPlayerStats(updatedStats)
+    syncAccountState({ stats: updatedStats, collection })
+  }, [isComplete, puzzle, path.length, shortestSteps, elapsedSeconds, collection, syncAccountState])
 
   const connectedEntities = current && gameGraph && graphData
     ? [...(gameGraph.neighbors.get(entityKey(current)) ?? [])]
@@ -357,8 +429,10 @@ export default function App() {
       return
     }
     try {
-      setCollection(recordCorrectGuess(window.localStorage, entity, earnedQuality))
+      const updatedCollection = recordCorrectGuess(window.localStorage, entity, earnedQuality)
+      setCollection(updatedCollection)
       setCollectionError('')
+      syncAccountState({ stats: playerStats, collection: updatedCollection })
     } catch (requestError) {
       setCollectionError(requestError instanceof Error
         ? `Could not save your collection: ${requestError.message}`
@@ -389,6 +463,19 @@ export default function App() {
   const closeCollectedCard = () => {
     selectedCardRequest.current++
     setSelectedCard(null)
+  }
+
+  const signOut = async () => {
+    try {
+      await logoutAccount()
+      setAccountUser(null)
+      setAccountReady(false)
+      setAccountError('')
+    } catch (requestError) {
+      setAccountError(requestError instanceof Error
+        ? `Could not sign out: ${requestError.message}`
+        : 'Could not sign out.')
+    }
   }
 
   const openPuzzleDestinationDetails = () => {
@@ -491,10 +578,30 @@ export default function App() {
           <button className={`nav-button ${view === 'collection' ? 'active' : ''}`} onClick={() => setView('collection')}>
             <Icon name="collection" /><span>Collection</span>
           </button>
+          {accountUser ? (
+            <button
+              className="nav-button account-nav-button"
+              onClick={() => void signOut()}
+              disabled={accountLoading}
+              title={`Signed in as ${accountUser.email ?? accountUser.name ?? 'Google user'}`}
+            >
+              Sign out
+            </button>
+          ) : (
+            <button
+              className="nav-button account-nav-button"
+              onClick={() => window.location.assign('/auth/google')}
+              disabled={!accountConfigured || accountLoading}
+              title={accountConfigured ? 'Sign in with Google to sync your collection' : 'Google sign-in is not configured'}
+            >
+              {accountLoading ? 'Checking…' : accountConfigured ? 'Sign in' : 'Account'}
+            </button>
+          )}
         </nav>
       </header>
 
       <main className="game-page">
+        {accountError && <p className="account-status" role="alert">{accountError}</p>}
         {collectionError && <p className="collection-storage-error" role="alert">{collectionError}</p>}
         {view === 'collection' ? (
           <section className="collection-page">

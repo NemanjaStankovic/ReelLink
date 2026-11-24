@@ -30,6 +30,11 @@ export function readCollection(storage: Storage = window.localStorage): Collecte
   }
 }
 
+export function saveCollection(storage: Storage, collection: CollectedCard[]): CollectedCard[] {
+  storage.setItem(STORAGE_KEY, JSON.stringify(collection))
+  return collection
+}
+
 export function recordCorrectGuess(
   storage: Storage,
   entity: CatalogEntity,
@@ -61,8 +66,7 @@ export function recordCorrectGuess(
     }
   }
 
-  storage.setItem(STORAGE_KEY, JSON.stringify(updated))
-  return updated
+  return saveCollection(storage, updated)
 }
 
 type StoredCollectedCard = Omit<CollectedCard, 'bestDifficulty'> & { bestDifficulty?: CardQuality }

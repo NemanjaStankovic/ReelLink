@@ -15,7 +15,7 @@ export interface PlayerStats {
   recentResults: GameResult[]
 }
 
-const EMPTY_STATS: PlayerStats = {
+export const EMPTY_PLAYER_STATS: PlayerStats = {
   gamesPlayed: 0,
   optimalGames: 0,
   bestSteps: null,
@@ -25,7 +25,7 @@ const EMPTY_STATS: PlayerStats = {
 
 export function readPlayerStats(storage: Storage = window.localStorage): PlayerStats {
   const saved = storage.getItem(STORAGE_KEY)
-  if (!saved) return { ...EMPTY_STATS }
+  if (!saved) return { ...EMPTY_PLAYER_STATS }
 
   try {
     const parsed: unknown = JSON.parse(saved)
@@ -33,12 +33,17 @@ export function readPlayerStats(storage: Storage = window.localStorage): PlayerS
     return parsed
   } catch (error) {
     storage.removeItem(STORAGE_KEY)
-    if (error instanceof SyntaxError) return { ...EMPTY_STATS }
+    if (error instanceof SyntaxError) return { ...EMPTY_PLAYER_STATS }
     if (error instanceof Error && error.message.startsWith('Stored ReelLink')) {
-      return { ...EMPTY_STATS }
+      return { ...EMPTY_PLAYER_STATS }
     }
     throw error
   }
+}
+
+export function savePlayerStats(storage: Storage, stats: PlayerStats): PlayerStats {
+  storage.setItem(STORAGE_KEY, JSON.stringify(stats))
+  return stats
 }
 
 export function recordGameResult(
@@ -58,8 +63,7 @@ export function recordGameResult(
     bestTimeSeconds: isBetter ? result.seconds : previous.bestTimeSeconds,
     recentResults: [result, ...previous.recentResults].slice(0, 20),
   }
-  storage.setItem(STORAGE_KEY, JSON.stringify(updated))
-  return updated
+  return savePlayerStats(storage, updated)
 }
 
 function isPlayerStats(value: unknown): value is PlayerStats {
